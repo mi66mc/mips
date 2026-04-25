@@ -60,7 +60,7 @@ type Event = {
 - Each tag inside `tags` MUST contain at least two strings: a tag name and a tag value.
 - Tag names SHOULD be explicit, readable names such as `event`, `pubkey`, or `topic`.
 - `content` MUST be a string, including when it stores encoded structured data.
-- The serialized event JSON MUST NOT exceed 1 MiB.
+- The serialized event JSON MUST NOT exceed 2 MiB.
 - Relays MUST validate `id` and `sig` before accepting an event.
 - Relays SHOULD reject events with `created_at` more than 30 minutes in the future.
 - Relays MUST treat repeated submissions of the same `id` as idempotent.
