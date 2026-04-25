@@ -10,6 +10,7 @@ produce compatible implementations in TypeScript, Go, Rust, or other languages.
 | MIP | Title | Status |
 | --- | --- | --- |
 | [MIP-01](MIP-01.md) | `event format` | `draft` |
+| [MIP-02](MIP-02.md) | `signatures` | `draft` |
 
 ## Suggested Structure
 
@@ -23,4 +24,3 @@ Each MIP should generally include:
 - Examples
 - Validation
 - Security Considerations
-

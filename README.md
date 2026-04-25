@@ -10,6 +10,7 @@ rules, and interoperability requirements for murm implementations.
 | MIP | Title | Status |
 | --- | --- | --- |
 | [MIP-01](mips/MIP-01.md) | `event format` | `draft` |
+| [MIP-02](mips/MIP-02.md) | `signatures` | `draft` |
 
 ## Status Values
 
