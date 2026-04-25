@@ -11,6 +11,7 @@ rules, and interoperability requirements for murm implementations.
 | --- | --- | --- |
 | [MIP-01](mips/MIP-01.md) | `event format` | `draft` |
 | [MIP-02](mips/MIP-02.md) | `signatures` | `draft` |
+| [MIP-03](mips/MIP-03.md) | `relay interface` | `draft` |
 
 ## Status Values
 

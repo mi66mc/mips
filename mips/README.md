@@ -11,6 +11,7 @@ produce compatible implementations in TypeScript, Go, Rust, or other languages.
 | --- | --- | --- |
 | [MIP-01](MIP-01.md) | `event format` | `draft` |
 | [MIP-02](MIP-02.md) | `signatures` | `draft` |
+| [MIP-03](MIP-03.md) | `relay interface` | `draft` |
 
 ## Suggested Structure
 
