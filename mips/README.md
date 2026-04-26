@@ -13,6 +13,7 @@ produce compatible implementations in TypeScript, Go, Rust, or other languages.
 | [MIP-02](MIP-02.md) | `signatures` | `draft` |
 | [MIP-03](MIP-03.md) | `relay interface` | `draft` |
 | [MIP-04](MIP-04.md) | `event kinds` | `draft` |
+| [MIP-05](MIP-05.md) | `relay compatibility` | `draft` |
 
 ## Suggested Structure
 

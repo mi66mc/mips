@@ -8,15 +8,15 @@ This MIP defines the initial event kinds for the Murm Protocol.
 
 Event kinds describe how clients should interpret an event's `content` and
 `tags`. Relays are not required to understand every kind, but relays MUST still
-validate event shape, identifiers, and signatures according to MIP-01 and
-MIP-02.
+validate event shape, identifiers, and signatures according to
+[MIP-01](MIP-01.md) and [MIP-02](MIP-02.md).
 
 ## Motivation
 
 The base event format is intentionally generic. Kinds give applications a shared
 meaning for common event types such as profiles, posts, comments, and reactions.
 
-The initial kind set should be small enough for an MVP while still supporting a
+The initial kind set should be small enough for a first implementation while still supporting a
 basic publishing and discussion flow.
 
 ## Specification
@@ -204,12 +204,12 @@ Example:
 ## Validation
 
 Clients and relays that understand a kind SHOULD validate kind-specific rules in
-addition to MIP-01 and MIP-02.
+addition to [MIP-01](MIP-01.md) and [MIP-02](MIP-02.md).
 
 Relays MAY reject events that violate kind-specific size limits.
 
 Relays MAY store and distribute events with unknown kinds if they are otherwise
-valid according to MIP-01 and MIP-02.
+valid according to [MIP-01](MIP-01.md) and [MIP-02](MIP-02.md).
 
 Clients SHOULD ignore kind-specific fields they do not understand.
 
@@ -225,4 +225,3 @@ Clients SHOULD sanitize rendered Markdown output.
 
 Profile names are user-controlled and MUST NOT be treated as globally unique
 identifiers.
-

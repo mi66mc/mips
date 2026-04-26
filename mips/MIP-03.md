@@ -8,7 +8,7 @@ This MIP defines the minimal relay interface for the Murm Protocol.
 
 A relay is a verifiable event store. It accepts signed events, returns events by
 identifier, and scans stored events by deterministic filters. The interface is
-defined as transport-neutral operations with an HTTP binding for the MVP.
+defined as transport-neutral operations with an initial HTTP binding.
 
 ## Motivation
 
@@ -28,7 +28,8 @@ Relays expose three logical operations:
 - `fetch`: return events by exact event id.
 - `scan`: return events matching one or more filters.
 
-Relays MUST validate events according to MIP-01 and MIP-02 before storing them.
+Relays MUST validate events according to [MIP-01](MIP-01.md) and
+[MIP-02](MIP-02.md) before storing them.
 Relays MAY apply local policy such as rate limits, storage limits, moderation
 rules, or accepted event kinds.
 
@@ -117,7 +118,7 @@ If more matching events may be available, the relay SHOULD return a non-null
 
 ## HTTP Binding
 
-The MVP HTTP binding uses JSON request and response bodies.
+The initial HTTP binding uses JSON request and response bodies.
 
 All endpoints in this MIP use `POST`, including read operations. This keeps the
 interface consistent with batch requests, structured filters, future transports,
@@ -385,7 +386,8 @@ Relays SHOULD validate requests before performing storage or scan work.
 
 Relays SHOULD reject malformed request bodies with a stable error response.
 
-Relays MUST NOT return events that fail MIP-01 or MIP-02 validation.
+Relays MUST NOT return events that fail [MIP-01](MIP-01.md) or
+[MIP-02](MIP-02.md) validation.
 
 ## Security Considerations
 

@@ -46,6 +46,7 @@ At a high level:
 | [MIP-02](mips/MIP-02.md) | `signatures` | `draft` | Defines canonical payloads, SHA-256 event ids, and Ed25519 signatures. |
 | [MIP-03](mips/MIP-03.md) | `relay interface` | `draft` | Defines relay operations: `submit`, `fetch`, and `scan`. |
 | [MIP-04](mips/MIP-04.md) | `event kinds` | `draft` | Defines initial event kinds: profile, post, comment, and reaction. |
+| [MIP-05](mips/MIP-05.md) | `relay compatibility` | `draft` | Defines the minimum relay behavior required for core compatibility. |
 
 ## Reading Order
 
@@ -55,6 +56,7 @@ Start with:
 2. [MIP-02](mips/MIP-02.md) for ids and signatures.
 3. [MIP-04](mips/MIP-04.md) for event semantics.
 4. [MIP-03](mips/MIP-03.md) for relay behavior.
+5. [MIP-05](mips/MIP-05.md) for relay compatibility.
 
 ## Implementation Notes
 

@@ -104,7 +104,7 @@ sig = lowercase_hex(ed25519_sign(private_key, raw_id_bytes))
 
 To validate an event, an implementation MUST:
 
-1. Validate the event shape according to MIP-01.
+1. Validate the event shape according to [MIP-01](MIP-01.md).
 2. Decode `event.pubkey` from lowercase hexadecimal.
 3. Decode `event.sig` from lowercase hexadecimal.
 4. Rebuild the canonical payload from `pubkey`, `created_at`, `kind`, `tags`,
@@ -136,7 +136,7 @@ The canonical payload is:
 ["<32-byte-public-key-hex>",1710000000,1,[["topic","murm"]],"hello murm"]
 ```
 
-The final signed event has the MIP-01 event shape:
+The final signed event has the [MIP-01](MIP-01.md) event shape:
 
 ```json
 {
@@ -166,4 +166,3 @@ available.
 
 Implementations MUST use a cryptographically secure random number generator when
 creating Ed25519 private keys.
-
