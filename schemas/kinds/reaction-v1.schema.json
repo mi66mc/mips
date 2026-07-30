@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://murm.dev/schemas/kinds/reaction-v1.schema.json",
+  "title": "Murm Reaction Event Version 1",
+  "allOf": [
+    {
+      "$ref": "../event-v1.schema.json"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": 3
+        },
+        "header": {
+          "type": "object",
+          "required": [
+            "target"
+          ],
+          "properties": {
+            "target": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "id"
+                  ],
+                  "properties": {
+                    "type": {
+                      "const": "event"
+                    },
+                    "id": {
+                      "$ref": "../event-v1.schema.json#/$defs/hex32"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "author",
+                    "kind",
+                    "document"
+                  ],
+                  "properties": {
+                    "type": {
+                      "const": "document"
+                    },
+                    "author": {
+                      "$ref": "../event-v1.schema.json#/$defs/hex32"
+                    },
+                    "kind": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "document": {
+                      "$ref": "../event-v1.schema.json#/$defs/hex32"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        }
+      }
+    }
+  ]
+}

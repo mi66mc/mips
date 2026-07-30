@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://murm.dev/schemas/kinds/comment-v1.schema.json",
+  "title": "Murm Comment Event Version 1",
+  "allOf": [
+    {
+      "$ref": "../event-v1.schema.json"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": 2
+        },
+        "header": {
+          "type": "object",
+          "required": [
+            "root",
+            "parent"
+          ],
+          "properties": {
+            "root": {
+              "type": "object",
+              "required": [
+                "author",
+                "kind",
+                "document"
+              ],
+              "properties": {
+                "author": {
+                  "$ref": "../event-v1.schema.json#/$defs/hex32"
+                },
+                "kind": {
+                  "const": 1
+                },
+                "document": {
+                  "$ref": "../event-v1.schema.json#/$defs/hex32"
+                }
+              },
+              "additionalProperties": false
+            },
+            "parent": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "../event-v1.schema.json#/$defs/hex32"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  ]
+}

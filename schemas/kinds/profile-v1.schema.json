@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://murm.dev/schemas/kinds/profile-v1.schema.json",
+  "title": "Murm Profile Event Version 1",
+  "allOf": [
+    {
+      "$ref": "../event-v1.schema.json"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": 0
+        },
+        "header": {
+          "type": "object",
+          "required": [
+            "document",
+            "revision",
+            "previous"
+          ],
+          "properties": {
+            "document": {
+              "$ref": "../event-v1.schema.json#/$defs/hex32"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "previous": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "../event-v1.schema.json#/$defs/hex32"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "content": {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            },
+            "about": {
+              "type": "string"
+            },
+            "picture": {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^https://"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    }
+  ]
+}
