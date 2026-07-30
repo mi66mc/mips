@@ -37,9 +37,10 @@ type JsonValue =
 
 JSON objects MUST NOT contain duplicate property names. Strings MUST contain
 valid Unicode and MUST preserve their original code points without
-normalization. Numbers MUST be finite IEEE 754 values. Fields that this MIP
-defines as integers MUST be safe integers from `0` through
-`9007199254740991`.
+normalization. Numbers MUST be finite IEEE 754 values. Integral JSON numbers
+MUST be safe integers from `-9007199254740991` through `9007199254740991`;
+larger integers MUST be encoded as strings by the owning kind MIP. Fields that
+this MIP defines as integers MUST additionally be non-negative.
 
 ### Event
 
