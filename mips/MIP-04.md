@@ -208,7 +208,7 @@ Content MUST NOT be empty. Extra header properties are invalid.
 
 ## Canonical Examples
 
-All examples use the fixed Ed25519 key from the MIP-02 vectors.
+All examples use the Ed25519 key from the MIP-02 canonical example.
 
 ### Profile
 
@@ -236,8 +236,25 @@ All examples use the fixed Ed25519 key from the MIP-02 vectors.
 
 ### Publication
 
-The complete valid publication is the `basic_publication` case in
-[`../test-vectors/mip-02-event-v1.json`](../test-vectors/mip-02-event-v1.json).
+```json
+{
+  "version": 1,
+  "id": "5b0b000dc2377e137aeaab36f7a5e2f82de104f1dac38162b08efe1bf7d71139",
+  "author": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+  "signer": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+  "authorization": null,
+  "created_at": 1710000000,
+  "kind": 1,
+  "header": {
+    "document": "4f5f4c6b5e897c32217a32097510c8d67491c7c9200f2af22c568a5dc2363742",
+    "revision": 1,
+    "previous": null,
+    "title": "Hello Murm"
+  },
+  "content": "# Hello Murm\n\nA signed publication.",
+  "signature": "40adfc83597064286dd51ad195ca613a444b6f9ca8e554da58d0d1c4ae4f10427719c8f941c87a7b8d2b12e0c84bfb80e23f198d20a3c7cefaa68e4612227b03"
+}
+```
 
 ### Comment
 
@@ -302,9 +319,6 @@ comment. It MUST re-evaluate stored unresolved comments when their parents
 arrive and exclude comments that become invalid from core-compatible kind `2`
 query results.
 
-The normative structural schemas are stored under
-[`../schemas/kinds/`](../schemas/kinds/).
-
 ## Relay Indexing
 
 Core-compatible relays index these exact JSON Pointer paths:
@@ -341,20 +355,3 @@ only produces a deterministic current state among valid signed revisions.
 
 Clients SHOULD limit recursive comment rendering and document-chain traversal
 to avoid resource exhaustion.
-
-## Test Vectors
-
-The publication example is part of the executable MIP-02 vectors. The other
-complete signed examples and focused positive and negative examples for every
-independent MIP-04 validation rule are committed in
-[`../test-vectors/mip-04-kind-validation-v1.json`](../test-vectors/mip-04-kind-validation-v1.json).
-The checker at
-[`../tools/verify-kind-vectors.mjs`](../tools/verify-kind-vectors.mjs)
-verifies their signatures and expected semantic outcomes.
-
-Schema conformance is defined by:
-
-- [`profile-v1.schema.json`](../schemas/kinds/profile-v1.schema.json)
-- [`publication-v1.schema.json`](../schemas/kinds/publication-v1.schema.json)
-- [`comment-v1.schema.json`](../schemas/kinds/comment-v1.schema.json)
-- [`reaction-v1.schema.json`](../schemas/kinds/reaction-v1.schema.json)

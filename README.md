@@ -1,7 +1,7 @@
 # Murm Protocol MIPs
 
-This repository contains Murm Improvement Proposals: the normative documents,
-schemas, and test vectors for the Murm Protocol.
+This repository contains Murm Improvement Proposals: the normative documents
+for the Murm Protocol.
 
 It specifies a protocol. It does not yet contain a relay or client
 implementation.
@@ -81,8 +81,8 @@ id = lowercase_hex(SHA-256(canonical_payload_bytes))
 signature = lowercase_hex(Ed25519_sign(private_key, raw_id_bytes))
 ```
 
-The committed [test vectors](test-vectors/mip-02-event-v1.json) allow
-independent implementations to verify that they produce identical results.
+MIP-02 includes a complete canonical payload, ID, and signature example so
+implementations can compare their results.
 
 ## Versioned Documents
 
@@ -179,16 +179,6 @@ inspect event content.
 5. [MIP-03](mips/MIP-03.md) for relay behavior.
 6. [MIP-05](mips/MIP-05.md) for core compatibility.
 
-## Normative Artifacts
-
-- [JSON Schemas](schemas/) define structural request and event validation.
-- [Cryptographic test vectors](test-vectors/mip-02-event-v1.json) define
-  language-independent canonical IDs and signatures.
-- [Kind validation vectors](test-vectors/mip-04-kind-validation-v1.json) define
-  language-independent semantic boundary and reference-state cases.
-- [Vector generator and tests](tools/) reproduce those expected values using
-  Node.js built-ins.
-
 ## Implementation Baseline
 
 A minimal implementation can:
@@ -199,8 +189,7 @@ A minimal implementation can:
 4. validate received events locally;
 5. resolve versioned document revisions;
 6. submit and fetch relay events;
-7. execute bounded structured queries;
-8. reproduce every normative test vector.
+7. execute bounded structured queries.
 
 Private keys never leave clients.
 

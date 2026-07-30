@@ -124,9 +124,6 @@ replace stored bytes for an existing ID with different bytes.
 
 ## Canonical Examples
 
-The normative, cryptographically valid version 1 examples are stored in
-[`../test-vectors/mip-02-event-v1.json`](../test-vectors/mip-02-event-v1.json).
-
 The unsigned portion of a publication event has this shape:
 
 ```json
@@ -164,9 +161,6 @@ An implementation validates an event in this order:
 
 Relays SHOULD refuse events whose `created_at` is more than 30 minutes in the
 future, but clock policy does not change the event's cryptographic validity.
-
-The normative structural schema is
-[`../schemas/event-v1.schema.json`](../schemas/event-v1.schema.json).
 
 ## Relay Indexing
 
@@ -206,8 +200,3 @@ Clients MUST treat relay responses as untrusted and validate events locally.
 
 Applications MUST treat `header` and `content` as untrusted user-controlled
 data. Rendering and execution rules belong to the relevant kind MIP.
-
-## Test Vectors
-
-MIP-02 defines the normative version 1 hashing and signature vectors in
-[`../test-vectors/mip-02-event-v1.json`](../test-vectors/mip-02-event-v1.json).

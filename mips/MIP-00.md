@@ -31,7 +31,6 @@ Every MIP MUST contain the following sections:
 9. Relay Indexing
 10. Compatibility
 11. Security Considerations
-12. Test Vectors
 
 A section MAY state that it has no applicable requirements, but it MUST NOT be
 silently omitted.
@@ -79,12 +78,8 @@ An unlisted number has no Murm-defined meaning.
 
 ## Canonical Examples
 
-A kind proposal includes at least one complete valid event and one invalid
-example for every independent validation rule that is not already covered by a
-referenced core MIP.
-
-Cryptographic examples MUST use committed test vectors when hashing or
-signatures are involved.
+A kind proposal SHOULD include at least one representative complete valid
+event. Validation edge cases MAY be described directly in the proposal.
 
 ## Validation
 
@@ -92,10 +87,10 @@ Reviewers MUST confirm that:
 
 1. every required section exists;
 2. the requested kind number is unallocated or reserved for that MIP;
-3. header and content schemas are unambiguous;
+3. header and content shapes are unambiguous;
 4. relay indexing requirements are bounded;
 5. compatibility and migration behavior are explicit;
-6. security-sensitive rules have test vectors.
+6. security-sensitive rules are explicit.
 
 ## Relay Indexing
 
@@ -119,8 +114,3 @@ service. It does not grant control over identities, relays, or content.
 
 A proposal MUST NOT redefine signature validity, authorship, or canonical event
 IDs without explicitly replacing the relevant core MIP.
-
-## Test Vectors
-
-This process MIP introduces no binary or cryptographic encoding and therefore
-has no test vectors.

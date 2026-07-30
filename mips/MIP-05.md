@@ -75,16 +75,15 @@ compatibility fallback with identical result semantics.
 - implemented MIPs;
 - the version 1 event limit of exactly 2 MiB;
 - a batch limit of at least 1 event;
-- exactly 10 query groups for query schema version 1;
-- exactly 20 conditions per query group for query schema version 1;
-- a query result limit of exactly 100 for query schema version 1;
+- exactly 10 query groups in version 1;
+- exactly 20 conditions per query group in version 1;
+- a query result limit of exactly 100 in version 1;
 - `http_query: true`;
 - `post_query_fallback: true`.
 
 Advertised limits are promises to accept requests within those bounds, subject
 to rate limits and local policy. Increasing a fixed version 1 limit requires a
-future schema and an explicit client opt-in; a relay MUST NOT advertise a larger
-value while continuing to validate requests against the version 1 schemas.
+future protocol version and an explicit client opt-in.
 
 ### Event Validity
 
@@ -203,11 +202,10 @@ The same event can remain valid according to MIP-01, MIP-02, and MIP-04.
 
 ## Validation
 
-A conformance suite verifies:
+An implementation claiming core version 1 compatibility MUST satisfy:
 
-1. every valid MIP-02 vector and every specified rejection;
-2. structural schemas and every semantic validation fixture for the four
-   MIP-04 kinds;
+1. MIP-02 ID, signature, and rejection rules;
+2. MIP-04 validation rules for the four initial kinds;
 3. single and batch submission, including duplicates and mixed results;
 4. immutable fetch, ETag, and conditional fetch;
 5. identical queries through `QUERY` and the fallback;
@@ -250,12 +248,3 @@ performing expensive work.
 
 Clients SHOULD publish important events to more than one relay and MUST verify
 events locally. A compatible relay remains an untrusted transport and store.
-
-## Test Vectors
-
-Core cryptographic vectors are stored in
-[`../test-vectors/mip-02-event-v1.json`](../test-vectors/mip-02-event-v1.json).
-
-Normative structural schemas are stored in [`../schemas/`](../schemas/).
-A future reference relay conformance suite should consume these artifacts
-directly.

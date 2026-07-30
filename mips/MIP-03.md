@@ -70,14 +70,11 @@ parsing compressed or uncompressed content into unbounded memory.
 ```
 
 `versions` lists accepted event envelope versions. `mips` lists implemented
-protocol MIPs. For query schema version 1, `event_bytes`, `query_conditions`,
-`query_groups`, and `query_limit` have the exact values shown above. A larger
-value requires a future query or envelope schema that defines how clients opt
-in. `batch_events` MAY vary and states the maximum batch the relay accepts.
-A relay MAY advertise additional named limits and features.
-
-The normative schema is
-[`../schemas/relay-info-v1.schema.json`](../schemas/relay-info-v1.schema.json).
+protocol MIPs. In version 1, `event_bytes`, `query_conditions`, `query_groups`,
+and `query_limit` have the exact values shown above. A larger value requires a
+future protocol version that defines how clients opt in. `batch_events` MAY
+vary and states the maximum batch the relay accepts. A relay MAY advertise
+additional named limits and features.
 
 ### Submit Events
 
@@ -225,9 +222,6 @@ group's `all` contains 1 through 20 conditions combined with `AND`.
 `sort` contains at most 3 unique fields. `limit` defaults to `20`, has a minimum
 of `1`, and MUST NOT exceed `100`. `cursor` is `null` or omitted for the first
 page.
-
-The normative request schema is
-[`../schemas/query-v1.schema.json`](../schemas/query-v1.schema.json).
 
 ### Query Paths
 
@@ -678,15 +672,3 @@ CORS-safelisted method. They include `QUERY` in
 `Access-Control-Allow-Methods` when cross-origin access is allowed.
 
 Clients MUST validate every returned event locally.
-
-## Test Vectors
-
-MIP-03 introduces no new cryptographic encoding. Query and relay-information
-request shapes are defined by:
-
-- [`query-v1.schema.json`](../schemas/query-v1.schema.json)
-- [`relay-info-v1.schema.json`](../schemas/relay-info-v1.schema.json)
-
-Implementations SHOULD turn every canonical query example into an interface
-test and confirm identical results through `QUERY /events` and
-`POST /events/query`.
