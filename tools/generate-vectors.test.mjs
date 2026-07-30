@@ -116,3 +116,35 @@ test("verifies expected valid and invalid vector outcomes", async () => {
     true,
   );
 });
+
+test("does not accept an invalid vector when the claimed error does not occur", async () => {
+  const { verifyVector } = await loadGenerator();
+
+  assert.throws(
+    () =>
+      verifyVector({
+        name: "false_negative_zero",
+        valid: false,
+        error_code: "negative_zero",
+        event: { ...baseEvent, content: 0 },
+      }),
+    /expected_error_not_observed/,
+  );
+});
+
+test("checks the committed id before accepting an invalid signature vector", async () => {
+  const { verifyVector } = await loadGenerator();
+
+  assert.throws(
+    () =>
+      verifyVector({
+        name: "wrong_id_invalid_signature",
+        valid: false,
+        error_code: "invalid_signature",
+        event: baseEvent,
+        id: "0".repeat(64),
+        signature: `${expectedSignature.slice(0, -2)}00`,
+      }),
+    /vector_id_mismatch/,
+  );
+});

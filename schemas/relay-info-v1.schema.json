@@ -42,24 +42,20 @@
       ],
       "properties": {
         "event_bytes": {
-          "type": "integer",
-          "minimum": 2097152
+          "const": 2097152
         },
         "batch_events": {
           "type": "integer",
           "minimum": 1
         },
         "query_conditions": {
-          "type": "integer",
-          "minimum": 20
+          "const": 20
         },
         "query_groups": {
-          "type": "integer",
-          "minimum": 10
+          "const": 10
         },
         "query_limit": {
-          "type": "integer",
-          "minimum": 100
+          "const": 100
         }
       },
       "additionalProperties": {

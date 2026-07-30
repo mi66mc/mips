@@ -129,7 +129,10 @@ Rules:
 - `summary`, when present, contains at most 500 Unicode scalar values.
 - `topics`, when present, contains at most 20 unique strings.
 - Each topic contains 1 through 64 Unicode scalar values.
-- `language`, when present, is a valid BCP 47 language tag.
+- `language`, when present, is a syntactically well-formed BCP 47 language tag
+  under the complete `Language-Tag` production in RFC 5646 Section 2.1,
+  including private-use and grandfathered forms. Validation does not require a
+  live lookup in the IANA Language Subtag Registry.
 - `content` is a string no larger than 1 MiB in UTF-8.
 - Extra header properties are invalid.
 
@@ -153,7 +156,22 @@ type CommentHeader = {
 
 `root` identifies the stable publication document rather than one revision.
 `parent` is `null` for a direct reply to the publication. A nested reply sets
-`parent` to a comment event ID. The parent comment MUST have the same `root`.
+`parent` to a comment event ID. When available, the parent MUST be a kind `2`
+comment with the same `root`.
+
+A nested comment has one of three reference states:
+
+- `resolved`: the parent is available, is a kind `2` comment, and has the same
+  `root`;
+- `unresolved`: the parent is unavailable;
+- `invalid`: the parent is available but has another kind or `root`.
+
+An unresolved comment is not malformed solely because synchronization is
+incomplete. A relay MAY store and return it, but MUST preserve its unresolved
+state for validation. When the parent later becomes available, the relay MUST
+re-evaluate the comment. An invalid comment MUST NOT be included in
+core-compatible kind `2` query results. A relay MAY retain it as opaque
+diagnostic data, but MUST NOT claim that it satisfies MIP-04.
 
 Comment `content` is a non-empty Markdown-compatible string no larger than
 128 KiB in UTF-8. Extra header properties are invalid.
@@ -278,9 +296,11 @@ Document validators MUST resolve and validate the complete predecessor chain
 before treating a revision as current. Missing predecessors are an unresolved
 state, not proof that the revision is malformed.
 
-Comment validators SHOULD verify the referenced root and parent when those
-events are available. A relay MAY store an otherwise well-formed comment while
-its references are unavailable.
+Comment validators MUST verify an available parent and MUST classify a missing
+parent as unresolved. A relay MAY store an otherwise well-formed unresolved
+comment. It MUST re-evaluate stored unresolved comments when their parents
+arrive and exclude comments that become invalid from core-compatible kind `2`
+query results.
 
 The normative structural schemas are stored under
 [`../schemas/kinds/`](../schemas/kinds/).
@@ -325,8 +345,12 @@ to avoid resource exhaustion.
 ## Test Vectors
 
 The publication example is part of the executable MIP-02 vectors. The other
-complete examples use the same fixed key and can be verified with the MIP-02
-algorithm.
+complete signed examples and focused positive and negative examples for every
+independent MIP-04 validation rule are committed in
+[`../test-vectors/mip-04-kind-validation-v1.json`](../test-vectors/mip-04-kind-validation-v1.json).
+The checker at
+[`../tools/verify-kind-vectors.mjs`](../tools/verify-kind-vectors.mjs)
+verifies their signatures and expected semantic outcomes.
 
 Schema conformance is defined by:
 

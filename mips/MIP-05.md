@@ -73,16 +73,18 @@ compatibility fallback with identical result semantics.
 
 - event envelope version `1`;
 - implemented MIPs;
-- an event limit of at least 2 MiB;
+- the version 1 event limit of exactly 2 MiB;
 - a batch limit of at least 1 event;
-- at least 10 query groups;
-- at least 20 conditions per query group;
-- query result limits through 100;
+- exactly 10 query groups for query schema version 1;
+- exactly 20 conditions per query group for query schema version 1;
+- a query result limit of exactly 100 for query schema version 1;
 - `http_query: true`;
 - `post_query_fallback: true`.
 
 Advertised limits are promises to accept requests within those bounds, subject
-to rate limits and local policy.
+to rate limits and local policy. Increasing a fixed version 1 limit requires a
+future schema and an explicit client opt-in; a relay MUST NOT advertise a larger
+value while continuing to validate requests against the version 1 schemas.
 
 ### Event Validity
 
@@ -94,6 +96,11 @@ Core version 1 validity requires:
 4. a correct MIP-02 ID;
 5. a valid Ed25519 signature over the raw ID;
 6. valid MIP-04 header and content for known core kinds.
+
+For nested comments, a missing parent is an unresolved synchronization state,
+not immediate invalidity. A relay MUST re-evaluate the comment when the parent
+arrives and MUST exclude it from core kind `2` query results if the available
+parent has another kind or root.
 
 Transport authentication, IP addresses, API keys, and relay-local identities
 are not proof of event authorship.
@@ -199,7 +206,8 @@ The same event can remain valid according to MIP-01, MIP-02, and MIP-04.
 A conformance suite verifies:
 
 1. every valid MIP-02 vector and every specified rejection;
-2. structural schemas for the four MIP-04 kinds;
+2. structural schemas and every semantic validation fixture for the four
+   MIP-04 kinds;
 3. single and batch submission, including duplicates and mixed results;
 4. immutable fetch, ETag, and conditional fetch;
 5. identical queries through `QUERY` and the fallback;

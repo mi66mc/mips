@@ -14,7 +14,8 @@ This directory contains the normative protocol documents for Murm.
 See the [Event Kind Registry](KIND-REGISTRY.md) for all allocated kind numbers.
 Normative machine-readable artifacts are stored in
 [`../schemas/`](../schemas/), and cryptographic examples are stored in
-[`../test-vectors/`](../test-vectors/).
+[`../test-vectors/`](../test-vectors/). The latter also contains focused
+semantic validation vectors for the initial event kinds.
 
 ## Current Proposals
 

@@ -70,7 +70,11 @@ parsing compressed or uncompressed content into unbounded memory.
 ```
 
 `versions` lists accepted event envelope versions. `mips` lists implemented
-protocol MIPs. A relay MAY advertise additional limits and features.
+protocol MIPs. For query schema version 1, `event_bytes`, `query_conditions`,
+`query_groups`, and `query_limit` have the exact values shown above. A larger
+value requires a future query or envelope schema that defines how clients opt
+in. `batch_events` MAY vary and states the maximum batch the relay accepts.
+A relay MAY advertise additional named limits and features.
 
 The normative schema is
 [`../schemas/relay-info-v1.schema.json`](../schemas/relay-info-v1.schema.json).

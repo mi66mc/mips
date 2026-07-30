@@ -129,31 +129,25 @@ function eventFromVector(vector) {
 }
 
 export function verifyVector(vector) {
-  try {
-    const event = eventFromVector(vector);
-    const canonical = canonicalPayload(event).toString("utf8");
-    const idBytes = calculateId(event);
-    const id = idBytes.toString("hex");
+  const event = eventFromVector(vector);
 
-    if (!vector.valid && vector.error_code === "invalid_signature") {
-      assert.equal(
-        verify(
-          null,
-          idBytes,
-          publicKey,
-          Buffer.from(vector.signature, "hex"),
-        ),
-        false,
-      );
+  if (!vector.valid && vector.error_code !== "invalid_signature") {
+    try {
+      canonicalPayload(event);
+    } catch (error) {
+      assert.equal(error instanceof Error ? error.message : error, vector.error_code);
       return true;
     }
+    throw new Error(`expected_error_not_observed:${vector.error_code}`);
+  }
 
-    if (!vector.valid) {
-      throw new Error(`expected_${vector.error_code}`);
-    }
+  const canonical = canonicalPayload(event).toString("utf8");
+  const idBytes = calculateId(event);
+  const id = idBytes.toString("hex");
 
-    assert.equal(canonical, vector.canonical);
-    assert.equal(id, vector.id);
+  assert.equal(id, vector.id, "vector_id_mismatch");
+
+  if (!vector.valid) {
     assert.equal(
       verify(
         null,
@@ -161,22 +155,25 @@ export function verifyVector(vector) {
         publicKey,
         Buffer.from(vector.signature, "hex"),
       ),
-      true,
+      false,
     );
-    if (vector.not_id) {
-      assert.notEqual(id, vector.not_id);
-    }
     return true;
-  } catch (error) {
-    if (
-      !vector.valid &&
-      error instanceof Error &&
-      error.message.includes(vector.error_code)
-    ) {
-      return true;
-    }
-    throw error;
   }
+
+  assert.equal(canonical, vector.canonical);
+  assert.equal(
+    verify(
+      null,
+      idBytes,
+      publicKey,
+      Buffer.from(vector.signature, "hex"),
+    ),
+    true,
+  );
+  if (vector.not_id) {
+    assert.notEqual(id, vector.not_id);
+  }
+  return true;
 }
 
 function signedVector(name, event, extra = {}) {

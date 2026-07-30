@@ -184,6 +184,8 @@ inspect event content.
 - [JSON Schemas](schemas/) define structural request and event validation.
 - [Cryptographic test vectors](test-vectors/mip-02-event-v1.json) define
   language-independent canonical IDs and signatures.
+- [Kind validation vectors](test-vectors/mip-04-kind-validation-v1.json) define
+  language-independent semantic boundary and reference-state cases.
 - [Vector generator and tests](tools/) reproduce those expected values using
   Node.js built-ins.
 
