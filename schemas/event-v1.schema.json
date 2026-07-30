@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://murm.dev/schemas/event-v1.schema.json",
+  "title": "Murm Event Envelope Version 1",
+  "type": "object",
+  "required": [
+    "version",
+    "id",
+    "author",
+    "signer",
+    "authorization",
+    "created_at",
+    "kind",
+    "header",
+    "content",
+    "signature"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "#/$defs/hex32"
+    },
+    "author": {
+      "$ref": "#/$defs/hex32"
+    },
+    "signer": {
+      "$ref": "#/$defs/hex32"
+    },
+    "authorization": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/hex32"
+        }
+      ]
+    },
+    "created_at": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "kind": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "header": {
+      "type": "object"
+    },
+    "content": true,
+    "signature": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{128}$"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "hex32": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "safeNonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    }
+  }
+}

@@ -2,127 +2,211 @@
 
 Status: `draft`
 
+## Kind Allocation
+
+This MIP defines the common event envelope and allocates no event kind.
+
 ## Abstract
 
-This MIP defines the base `Event` object used by the Murm Protocol.
-
-An event is the canonical unit of public content, metadata, and protocol actions
-in murm. Events are authored by public keys, identified by content hashes, and
-validated through cryptographic signatures.
+This MIP defines version 1 of the immutable Murm `Event`. Every event identifies
+an author, carries a kind-specific public header and content body, and can be
+verified without trusting the relay that delivered it.
 
 ## Motivation
 
-murm needs a small, stable event format that can move across different transports
-without changing meaning. The same event should be usable over HTTP relays,
-future WebSocket relays, local storage, and future peer-to-peer transports.
-
-The relay should not own user identity or session state. Instead, clients create
-events locally and relays validate those events before storing or distributing
-them.
+Murm needs one small envelope that can represent publications, profiles,
+messages, and future protocol actions without relying on positional tags.
+Applications should be able to add new behavior through MIPs while relays keep a
+stable storage and validation model.
 
 ## Specification
 
-An event is a JSON object with the following fields:
+### JSON Values
+
+Murm uses the I-JSON subset required by the JSON Canonicalization Scheme:
+
+```ts
+type JsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | JsonValue[]
+  | { [key: string]: JsonValue }
+```
+
+JSON objects MUST NOT contain duplicate property names. Strings MUST contain
+valid Unicode and MUST preserve their original code points without
+normalization. Numbers MUST be finite IEEE 754 values. Fields that this MIP
+defines as integers MUST be safe integers from `0` through
+`9007199254740991`.
+
+### Event
 
 ```ts
 type Event = {
+  version: 1
   id: string
-  pubkey: string
+  author: string
+  signer: string
+  authorization: string | null
   created_at: number
   kind: number
-  tags: string[][]
-  content: string
-  sig: string
+  header: Record<string, JsonValue>
+  content: JsonValue
+  signature: string
 }
 ```
+
+Unknown top-level fields are invalid in version 1.
 
 ### Fields
 
-- `id`: lowercase hex-encoded hash of the canonical event payload.
-- `pubkey`: lowercase hex-encoded public key of the event author.
-- `created_at`: Unix timestamp in seconds.
-- `kind`: numeric event kind.
-- `tags`: ordered list of tag arrays.
-- `content`: event body as a string.
-- `sig`: lowercase hex-encoded signature proving that `pubkey` authored the event.
+- `version` MUST be the integer `1`.
+- `id` MUST be a lowercase hexadecimal encoding of a 32-byte event hash.
+- `author` MUST be a lowercase hexadecimal encoding of the 32-byte Ed25519
+  public key representing the event author.
+- `signer` MUST be a lowercase hexadecimal encoding of the 32-byte Ed25519
+  public key that produced `signature`.
+- `authorization` MUST be `null` for direct authorship. A future MIP may define
+  a 32-byte event ID authorizing a different `signer`.
+- `created_at` MUST be a non-negative safe integer containing Unix time in UTC
+  seconds.
+- `kind` MUST be a non-negative safe integer allocated through MIP-00.
+- `header` MUST be a JSON object containing public, kind-specific metadata.
+- `content` MUST be a JSON value allowed by the MIP that defines `kind`.
+- `signature` MUST be a lowercase hexadecimal encoding of a 64-byte Ed25519
+  signature.
 
-### Initial Rules
+### Direct Authorship
 
-- Events MUST be valid JSON objects.
-- Events MUST contain all required fields.
-- Unknown extra fields SHOULD be ignored by protocol implementations.
-- Unknown extra fields MUST NOT be included when calculating the event `id`.
-- `created_at` MUST be represented as Unix time in seconds, in UTC.
-- `created_at` MUST be an integer.
-- `kind` MUST be an integer.
-- `tags` MUST be an array of arrays of strings.
-- `tags` MAY be an empty array.
-- Each tag inside `tags` MUST contain at least two strings: a tag name and a tag value.
-- Tag names SHOULD be explicit, readable names such as `event`, `pubkey`, or `topic`.
-- `content` MUST be a string, including when it stores encoded structured data.
-- The serialized event JSON MUST NOT exceed 2 MiB.
-- Relays MUST validate `id` and `sig` before accepting an event.
-- Relays SHOULD reject events with `created_at` more than 30 minutes in the future.
-- Relays MUST treat repeated submissions of the same `id` as idempotent.
+Core version 1 supports direct signatures:
 
-## Examples
+```text
+signer == author
+authorization == null
+```
+
+An event that does not satisfy both conditions is invalid under the core version
+1 compatibility profile. The two fields are separate so a future
+device-authorization MIP can define delegated signatures without changing the
+event envelope.
+
+### Kind Ownership
+
+MIP-01 only requires `header` to be an object and `content` to be a JSON value.
+The MIP that owns `kind` MUST define:
+
+- the exact header schema;
+- the exact content schema;
+- required and optional properties;
+- whether extra properties are accepted;
+- size and semantic limits;
+- indexable and sortable header paths;
+- whether events form a versioned document.
+
+There is no generic `tags` or `content_type` field.
+
+### Size
+
+The complete event JSON received on the wire MUST NOT exceed 2 MiB
+(`2097152` bytes) when encoded as UTF-8. Relays SHOULD enforce the wire-size
+limit before cryptographic or kind-specific validation.
+
+### Immutability
+
+An event is immutable after its ID and signature are created. Changing any
+signed field creates a different event ID.
+
+Repeated submissions of the same valid ID MUST be idempotent. A relay MUST NOT
+replace stored bytes for an existing ID with different bytes.
+
+## Canonical Examples
+
+The normative, cryptographically valid version 1 examples are stored in
+[`../test-vectors/mip-02-event-v1.json`](../test-vectors/mip-02-event-v1.json).
+
+The unsigned portion of a publication event has this shape:
 
 ```json
 {
-  "id": "<event-id>",
-  "pubkey": "<author-public-key>",
+  "version": 1,
+  "author": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+  "signer": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+  "authorization": null,
   "created_at": 1710000000,
   "kind": 1,
-  "tags": [
-    ["topic", "murm"]
-  ],
-  "content": "hello murm",
-  "sig": "<signature>"
+  "header": {
+    "document": "4f5f4c6b5e897c32217a32097510c8d67491c7c9200f2af22c568a5dc2363742",
+    "revision": 1,
+    "previous": null,
+    "title": "Hello Murm"
+  },
+  "content": "# Hello Murm\n\nA signed publication."
 }
 ```
 
-An event without tags is valid:
-
-```json
-{
-  "id": "<event-id>",
-  "pubkey": "<author-public-key>",
-  "created_at": 1710000000,
-  "kind": 1,
-  "tags": [],
-  "content": "hello murm",
-  "sig": "<signature>"
-}
-```
-
-The following tag values are invalid because each tag must contain at least two
-strings:
-
-```json
-{
-  "tags": [
-    [],
-    ["topic"]
-  ]
-}
-```
+`id` and `signature` are added using MIP-02.
 
 ## Validation
 
-Detailed hashing and signature validation rules are defined outside this MIP.
-At minimum, an implementation must be able to:
+An implementation validates an event in this order:
 
-1. Reconstruct the canonical payload.
-2. Recalculate the event `id`.
-3. Compare the calculated `id` with `event.id`.
-4. Verify `event.sig` against `event.pubkey` and `event.id`.
+1. Enforce the request and event byte limits.
+2. Parse one JSON object while rejecting duplicate property names and invalid
+   Unicode.
+3. Validate the fixed event shape.
+4. Require `signer == author` and `authorization == null`.
+5. Validate the ID and signature using MIP-02.
+6. Find the accepted MIP that defines `kind`.
+7. Validate `header` and `content` using that MIP.
+
+Relays SHOULD refuse events whose `created_at` is more than 30 minutes in the
+future, but clock policy does not change the event's cryptographic validity.
+
+The normative structural schema is
+[`../schemas/event-v1.schema.json`](../schemas/event-v1.schema.json).
+
+## Relay Indexing
+
+Core-compatible relays MUST index:
+
+```text
+/id
+/author
+/signer
+/created_at
+/kind
+```
+
+These are JSON Pointers into the complete event. MIP-01 defines no indexable
+paths under `/header`; kind MIPs define them.
+
+Relays MUST NOT index or query `/content` as part of the core compatibility
+profile.
+
+## Compatibility
+
+An implementation that only supports envelope version 1 MUST reject other
+versions with a stable `unsupported_version` result.
+
+Unknown kinds MAY be stored as opaque events when the envelope, ID, and
+signature are valid. Unknown kinds are not semantically valid under a
+compatibility profile unless that profile includes their defining MIP.
 
 ## Security Considerations
 
-Relays MUST NOT treat transport-level authentication as proof of authorship.
-Authorship is established only by event signatures.
+Transport authentication, IP addresses, API keys, relay accounts, and relay
+acceptance are not proof of authorship. Authorship comes only from a valid event
+signature.
 
-Clients SHOULD treat unsigned, invalid, or partially validated events as
-untrusted data.
+Relays SHOULD reject oversized input before hashing or signature verification.
+Clients MUST treat relay responses as untrusted and validate events locally.
 
-Relays SHOULD enforce size limits before doing expensive validation work.
+Applications MUST treat `header` and `content` as untrusted user-controlled
+data. Rendering and execution rules belong to the relevant kind MIP.
+
+## Test Vectors
+
+MIP-02 defines the normative version 1 hashing and signature vectors in
+[`../test-vectors/mip-02-event-v1.json`](../test-vectors/mip-02-event-v1.json).
