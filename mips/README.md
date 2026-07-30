@@ -12,6 +12,9 @@ This directory contains the normative protocol documents for Murm.
 6. [MIP-05](MIP-05.md) defines the core compatibility profile.
 
 See the [Event Kind Registry](KIND-REGISTRY.md) for all allocated kind numbers.
+Normative machine-readable artifacts are stored in
+[`../schemas/`](../schemas/), and cryptographic examples are stored in
+[`../test-vectors/`](../test-vectors/).
 
 ## Current Proposals
 
