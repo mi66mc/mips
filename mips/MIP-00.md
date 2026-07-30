@@ -48,15 +48,37 @@ MIPs use one of these statuses:
 Only `accepted` and `final` MIPs are part of a compatibility profile unless that
 profile explicitly says otherwise.
 
+The maintainers of the canonical Murm MIP repository are the change
+controllers. Every status transition MUST be made through a reviewed repository
+change that records its rationale.
+
+- A new proposal starts as `draft`.
+- A proposal becomes `accepted` after it satisfies this MIP's validation rules
+  and the maintainers approve it for compatible implementation.
+- A proposal becomes `final` after at least two independent implementations
+  demonstrate interoperable behavior for its normative requirements.
+- A proposal becomes `deprecated` only with a compatibility statement and,
+  when applicable, a replacement or migration path.
+- A proposal becomes `rejected` only with a recorded rationale.
+
 ### Changes
 
 Editorial corrections MAY update an existing MIP without changing its event
 kind.
 
-A change is breaking when an event valid under the old rules can acquire a
-different meaning, become invalid, or produce a different canonical ID under
-the new rules. Breaking changes MUST use a new kind allocation or a migration
-MIP.
+A `draft` MIP MAY change incompatibly. Such a change MUST update its canonical
+examples, registry entry, and compatibility section in the same repository
+change.
+
+After a MIP becomes `accepted` or `final`, a change is breaking when an event
+valid under the old rules can acquire a different meaning, become invalid, or
+produce a different canonical ID under the new rules.
+
+- A breaking change to kind semantics MUST use a new kind allocation or a
+  migration MIP.
+- A breaking change to the event envelope, canonicalization, cryptography, or
+  transport MUST define a new applicable protocol version in a new MIP or
+  migration MIP.
 
 ## Kind Allocation
 
@@ -74,7 +96,8 @@ Each registry entry MUST identify:
 - the MIP status;
 - whether events are immutable events or versioned documents.
 
-An unlisted number has no Murm-defined meaning.
+An unlisted number has no Murm-defined meaning. It may still appear in an
+otherwise structurally and cryptographically valid opaque event.
 
 ## Canonical Examples
 
@@ -102,8 +125,8 @@ queryable.
 
 ## Compatibility
 
-Relays MAY store unknown kinds as opaque, validly signed events. They MUST NOT
-claim to understand or semantically validate an unknown kind.
+Relays MAY store unlisted or unsupported kinds as opaque, validly signed
+events. They MUST NOT claim to understand or semantically validate such a kind.
 
 Clients MUST NOT infer semantics from an unregistered kind number.
 

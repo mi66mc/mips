@@ -52,7 +52,7 @@ The fixed envelope is shared by every event.
 - `header` contains public metadata needed for validation, relationships,
   routing, and indexed queries.
 - `content` contains the kind-specific body.
-- The MIP that owns `kind` defines the exact schema of both.
+- The MIP that owns `kind` defines the exact shape and rules of both.
 
 There are no positional event tags. Event kinds are allocated only through
 MIPs and recorded in the [kind registry](mips/KIND-REGISTRY.md).
@@ -118,9 +118,11 @@ Short posts and long articles intentionally use the same publication kind.
 | `GET` | `/info` | Discover versions, MIPs, limits, and features |
 | `POST` | `/events` | Submit one or more signed events |
 | `GET` | `/events/{id}` | Fetch one immutable event |
+| `HEAD` | `/events/{id}` | Fetch immutable event metadata |
 | `QUERY` | `/events` | Run a safe, structured event query |
 | `POST` | `/events/query` | Compatibility fallback for `QUERY` |
 | `OPTIONS` | `/events` | Discover query support |
+| `OPTIONS` | `/events/{id}` | Discover immutable fetch support |
 
 `QUERY` is the safe and idempotent method defined by
 [RFC 10008](https://www.rfc-editor.org/rfc/rfc10008).

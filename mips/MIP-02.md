@@ -27,7 +27,8 @@ silently excluded from authorship.
 - Canonical JSON MUST follow RFC 8785 JSON Canonicalization Scheme (JCS), with
   the additional input restrictions below.
 - Event IDs MUST use SHA-256.
-- Event signatures MUST use Ed25519.
+- Event signatures MUST use pure Ed25519 as defined by RFC 8032 Section 5.1.
+  Ed25519ph and context-bearing Ed25519 variants are not compatible.
 - IDs, public keys, and signatures MUST use lowercase hexadecimal.
 
 ### Input Restrictions
@@ -113,10 +114,27 @@ To verify an event:
 4. Hash the UTF-8 bytes with SHA-256.
 5. Compare the lowercase hexadecimal result with `event.id`.
 6. Decode `event.signer` and `event.signature` from lowercase hexadecimal.
-7. Verify the Ed25519 signature over the raw hash bytes.
+7. Apply the strict Ed25519 checks below and verify the signature over the raw
+   hash bytes.
 8. Apply direct-authorship or authorization rules from the active compatibility
    profile.
 9. Reject the event if any step fails.
+
+Strict Ed25519 validation is part of Murm event validity:
+
+- the public key MUST be exactly 32 bytes and use a canonical encoding of a
+  non-identity point in the prime-order subgroup;
+- the signature MUST be exactly 64 bytes;
+- the encoded `R` point in the first 32 signature bytes MUST be canonical,
+  decode successfully, and lie in the prime-order subgroup;
+- the little-endian scalar `S` in the final 32 signature bytes MUST satisfy
+  `0 <= S < L`, where `L` is the Ed25519 subgroup order from RFC 8032;
+- every point or scalar decoding failure MUST reject the signature;
+- verification MUST use the RFC 8032 Ed25519 equation, not a permissive legacy
+  variant that accepts non-canonical or small-order inputs.
+
+These checks make signature validity independent of library-specific permissive
+behavior.
 
 ## Canonical Examples
 
@@ -177,8 +195,11 @@ Private keys MUST remain on clients and MUST be generated with a
 cryptographically secure random number generator.
 
 Implementations SHOULD use constant-time Ed25519 verification from a maintained
-cryptographic library. They MUST NOT implement Ed25519 arithmetic solely from
-this document.
+cryptographic library that exposes strict point and scalar validation. If a
+library's default verifier accepts non-canonical or small-order inputs, the
+implementation MUST perform the additional strict checks before calling it.
+Implementations MUST NOT implement Ed25519 arithmetic solely from this
+document.
 
 Relay acceptance is not proof of validity. Clients SHOULD recalculate IDs and
 verify signatures for events received from every relay.

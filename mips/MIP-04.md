@@ -18,8 +18,8 @@ The allocations are also recorded in
 
 ## Abstract
 
-This MIP defines the initial Murm event kinds for public profiles,
-Markdown-compatible publications of any length, comments, and reactions.
+This MIP defines the initial Murm event kinds for public profiles, bounded short
+and long-form Markdown-compatible publications, comments, and reactions.
 
 ## Motivation
 
@@ -32,6 +32,11 @@ Short posts and long articles use the same `publication` kind. Their difference
 is presentation, not protocol identity.
 
 ## Specification
+
+Every object shape defined by this MIP is closed unless stated otherwise. This
+includes nested `root` and `target` objects; unknown properties are invalid.
+Event IDs, public keys, and 32-byte document identifiers use the lowercase
+64-character hexadecimal encoding defined by MIP-01.
 
 ### Versioned Documents
 
@@ -48,6 +53,9 @@ type DocumentHeader = {
 `document` is a 64-character lowercase hexadecimal identifier. Unless a kind
 defines deterministic derivation, the creator generates it from 32
 cryptographically random bytes.
+
+`revision` MUST be a positive safe integer. `previous` MUST be `null` or a
+valid event ID.
 
 The complete document identity is the tuple:
 
@@ -104,8 +112,9 @@ Rules:
 
 - `name` contains 1 through 80 Unicode scalar values.
 - `about`, when present, is a string no larger than 2 KiB in UTF-8.
-- `picture`, when present, is an absolute `https` URL.
-- The complete canonical content is no larger than 8 KiB in UTF-8.
+- `picture`, when present, is an absolute RFC 3986 URI with the `https` scheme,
+  a non-empty host, and no user-information component.
+- `UTF-8(JCS(content))` is no larger than 8 KiB.
 - Extra content or header properties are invalid.
 - Names are display values and are not globally unique identifiers.
 
@@ -129,6 +138,8 @@ Rules:
 - `summary`, when present, contains at most 500 Unicode scalar values.
 - `topics`, when present, contains at most 20 unique strings.
 - Each topic contains 1 through 64 Unicode scalar values.
+- Topic uniqueness compares exact Unicode scalar sequences without
+  normalization.
 - `language`, when present, is a syntactically well-formed BCP 47 language tag
   under the complete `Language-Tag` production in RFC 5646 Section 2.1,
   including private-use and grandfathered forms. Validation does not require a
@@ -158,6 +169,13 @@ type CommentHeader = {
 `parent` is `null` for a direct reply to the publication. A nested reply sets
 `parent` to a comment event ID. When available, the parent MUST be a kind `2`
 comment with the same `root`.
+
+The publication root is `resolved` when at least one valid kind `1` revision
+for `(root.author, 1, root.document)` is available and `unresolved` otherwise.
+An unavailable root does not make the comment malformed or cryptographically
+invalid. A relay MAY store and return an unresolved-root comment and MUST
+re-evaluate its root state when matching publication revisions arrive.
+A malformed `root` object makes the comment invalid.
 
 A nested comment has one of three reference states:
 
@@ -196,6 +214,11 @@ type ReactionHeader = {
       }
 }
 ```
+
+For a document target, `kind` MUST be a non-negative safe integer. A target
+object is invalid if its fields do not have the identifier encodings declared
+above. Target availability is not part of reaction validity: a well-formed
+reaction may reference an event or document the receiver has not synchronized.
 
 Reaction `content` is:
 
@@ -319,6 +342,10 @@ comment. It MUST re-evaluate stored unresolved comments when their parents
 arrive and exclude comments that become invalid from core-compatible kind `2`
 query results.
 
+Comment validators MUST also track whether the publication root is resolved.
+An unresolved root or parent does not itself exclude the comment from kind `2`
+queries, but clients and relays MUST NOT present the reference as resolved.
+
 ## Relay Indexing
 
 Core-compatible relays index these exact JSON Pointer paths:
@@ -328,7 +355,7 @@ Core-compatible relays index these exact JSON Pointer paths:
 | `0` | `/header/document`, `/header/revision` | `/header/revision` |
 | `1` | `/header/document`, `/header/revision`, `/header/topics`, `/header/language` | `/header/revision` |
 | `2` | `/header/root/author`, `/header/root/document`, `/header/parent` | none |
-| `3` | `/header/target/type`, `/header/target/id`, `/header/target/document` | none |
+| `3` | `/header/target/type`, `/header/target/id`, `/header/target/author`, `/header/target/kind`, `/header/target/document` | none |
 
 Relays are not required to index profile names, publication titles, summaries,
 or full text.
@@ -338,7 +365,8 @@ or full text.
 Core-compatible version 1 relays MUST accept valid events for kinds `0` through
 `3`, subject to local policy.
 
-Relays MAY store unknown kinds but MUST NOT apply MIP-04 semantics to them.
+Relays MAY store unlisted or unsupported kinds but MUST NOT apply MIP-04
+semantics to them.
 
 Clients that do not understand a kind may preserve it as an opaque signed event.
 

@@ -73,9 +73,13 @@ Unknown top-level fields are invalid in version 1.
   a 32-byte event ID authorizing a different `signer`.
 - `created_at` MUST be a non-negative safe integer containing Unix time in UTC
   seconds.
-- `kind` MUST be a non-negative safe integer allocated through MIP-00.
-- `header` MUST be a JSON object containing public, kind-specific metadata.
-- `content` MUST be a JSON value allowed by the MIP that defines `kind`.
+- `kind` MUST be a non-negative safe integer. Allocation through MIP-00 assigns
+  Murm semantics but is not required for structural or cryptographic envelope
+  validity.
+- `header` MUST be a JSON object. If the implementation understands `kind`,
+  the object MUST satisfy the public metadata rules defined for that kind.
+- `content` MUST be a JSON value. If the implementation understands `kind`,
+  the value MUST satisfy the content rules defined for that kind.
 - `signature` MUST be a lowercase hexadecimal encoding of a 64-byte Ed25519
   signature.
 
@@ -107,6 +111,10 @@ The MIP that owns `kind` MUST define:
 - whether events form a versioned document.
 
 There is no generic `tags` or `content_type` field.
+
+An unlisted or unsupported kind is opaque. Its envelope, ID, and signature can
+still be valid, but an implementation MUST NOT infer kind-specific validity or
+semantics without an allocated MIP it implements.
 
 ### Size
 
@@ -156,8 +164,11 @@ An implementation validates an event in this order:
 3. Validate the fixed event shape.
 4. Require `signer == author` and `authorization == null`.
 5. Validate the ID and signature using MIP-02.
-6. Find the accepted MIP that defines `kind`.
-7. Validate `header` and `content` using that MIP.
+6. If the implementation claims support for the kind, or the active
+   compatibility profile requires it, validate `header` and `content` using the
+   defining MIP.
+7. Otherwise, treat the unlisted or unsupported kind as opaque and apply the
+   relay's unknown-kind storage policy.
 
 Relays SHOULD refuse events whose `created_at` is more than 30 minutes in the
 future, but clock policy does not change the event's cryptographic validity.
@@ -185,9 +196,9 @@ profile.
 An implementation that only supports envelope version 1 MUST reject other
 versions with a stable `unsupported_version` result.
 
-Unknown kinds MAY be stored as opaque events when the envelope, ID, and
-signature are valid. Unknown kinds are not semantically valid under a
-compatibility profile unless that profile includes their defining MIP.
+Unlisted or unsupported kinds MAY be stored as opaque events when the envelope,
+ID, and signature are valid. They are not semantically valid under a
+compatibility profile unless that profile includes an implemented defining MIP.
 
 ## Security Considerations
 

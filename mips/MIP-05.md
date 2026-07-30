@@ -47,8 +47,9 @@ A compatible relay understands and validates:
 | `2` | `comment` |
 | `3` | `reaction` |
 
-It MAY store unknown kinds as opaque events after core envelope, ID, and
-signature validation. It MUST NOT claim to understand their semantics.
+It MAY store unlisted or unsupported kinds as opaque events after core
+envelope, ID, and signature validation. It MUST NOT claim to understand their
+semantics.
 
 ### Required HTTP Interface
 
@@ -58,6 +59,7 @@ A compatible relay exposes:
 GET     /info
 POST    /events
 GET     /events/{id}
+HEAD    /events/{id}
 QUERY   /events
 POST    /events/query
 OPTIONS /events
@@ -75,8 +77,13 @@ compatibility fallback with identical result semantics.
 - implemented MIPs;
 - the version 1 event limit of exactly 2 MiB;
 - a batch limit of at least 1 event;
+- a decoded batch-body limit of at least 4 MiB;
+- exactly 64 KiB of decoded query-body bytes in version 1;
 - exactly 10 query groups in version 1;
 - exactly 20 conditions per query group in version 1;
+- exactly 100 values per `in` condition in version 1;
+- exactly 3 caller-supplied sort fields in version 1;
+- exactly 4096 UTF-8 bytes per cursor in version 1;
 - a query result limit of exactly 100 in version 1;
 - `http_query: true`;
 - `post_query_fallback: true`.
@@ -101,6 +108,10 @@ not immediate invalidity. A relay MUST re-evaluate the comment when the parent
 arrives and MUST exclude it from core kind `2` query results if the available
 parent has another kind or root.
 
+A missing publication root is likewise unresolved rather than immediately
+invalid. Relays MUST update the root state when a matching valid publication
+revision arrives.
+
 Transport authentication, IP addresses, API keys, and relay-local identities
 are not proof of event authorship.
 
@@ -118,6 +129,9 @@ the event envelope or authorship rules.
 A compatible relay:
 
 - processes every event in a valid batch independently;
+- enforces both advertised batch event-count and byte limits;
+- rejects an oversized batch request at request level and an oversized event at
+  item level as defined by MIP-03;
 - stores valid events idempotently by `id`;
 - returns `duplicate` for repeated valid IDs;
 - never replaces stored bytes for one ID with different bytes;
@@ -133,8 +147,10 @@ A compatible relay:
 - rejects unknown paths rather than silently scanning them;
 - never exposes `/content` through core filtering;
 - implements MIP-03 `AND`/`OR` semantics and operators;
+- returns each matching event ID at most once across `OR` groups;
+- enforces every advertised query, value-list, sort, cursor, and result limit;
 - uses deterministic ordering with `/id` as the final tie-breaker;
-- returns opaque, query-bound cursors;
+- returns opaque, query-bound cursors using MIP-03 live keyset continuation;
 - returns no more than 100 events per page.
 
 ### Errors
@@ -172,8 +188,13 @@ A minimum-compatible discovery response is:
   "limits": {
     "event_bytes": 2097152,
     "batch_events": 1,
-    "query_conditions": 20,
+    "batch_bytes": 4194304,
+    "query_bytes": 65536,
+    "query_conditions_per_group": 20,
     "query_groups": 10,
+    "query_in_values": 100,
+    "query_sort_fields": 3,
+    "cursor_bytes": 4096,
     "query_limit": 100
   },
   "features": {
@@ -207,7 +228,7 @@ An implementation claiming core version 1 compatibility MUST satisfy:
 1. MIP-02 ID, signature, and rejection rules;
 2. MIP-04 validation rules for the four initial kinds;
 3. single and batch submission, including duplicates and mixed results;
-4. immutable fetch, ETag, and conditional fetch;
+4. immutable GET and HEAD fetch, ETag, and conditional fetch;
 5. identical queries through `QUERY` and the fallback;
 6. every required filter operator and path;
 7. ordering ties and cursor continuation;
