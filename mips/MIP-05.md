@@ -1,171 +1,156 @@
-# MIP-05: Relay Compatibility
+# MIP-05: Compatibility and Trust Boundaries
 
 Status: `draft`
 
+## Kind Allocation
+
+This MIP allocates no event kind.
+
 ## Abstract
 
-This MIP defines the minimum behavior required for a relay to be considered
-core-compatible with the Murm Protocol.
-
-Relay compatibility is not the same as relay policy. Protocol validity is
-defined by the MIPs. A relay may refuse storage for operational reasons, but it
-must not redefine whether an event is valid.
+This MIP separates core event verification, optional application capabilities,
+and local relay policy. It records the intended compatibility baseline without
+claiming that the remaining draft formats are ready for interoperable release.
 
 ## Motivation
 
-murm should not become a network where every relay behaves like a different
-protocol. If relay behavior diverges too much, clients cannot reliably publish,
-sync, or discover events across relays.
-
-This MIP defines a compatibility baseline. A relay that claims core compatibility
-must support the base event format, signatures, relay interface, and initial
-event kinds.
+Storing a signed object, understanding its kind, and offering an indexed current
+view are different capabilities. A generic protocol must not require every
+application to implement every feature or trust a relay's assertions.
 
 ## Specification
 
-A Murm Protocol core-compatible relay MUST implement:
+### Candidate baseline
 
-- [MIP-01](MIP-01.md): event format.
-- [MIP-02](MIP-02.md): signatures.
-- [MIP-03](MIP-03.md): relay interface.
-- [MIP-04](MIP-04.md): event kinds.
+A baseline relay is intended to offer:
 
-### Required Operations
+- MIP-01 envelope verification and MIP-02 hashing/signatures.
+- MIP-03 single-event submission, local exact retrieval, local filtered query,
+  incremental sync, and capability discovery.
+- The HTTP QUERY and POST query/sync alternatives with equal semantics.
+- MIP-06 relay contacts and bounded default propagation of new accepted events.
+- Explicit policy and overload refusals without redefining signature validity.
+- No protocol registration, login, password, session, JWT, or API key.
 
-A compatible relay MUST support the HTTP binding defined by [MIP-03](MIP-03.md):
+MIP-04 publications, MIP-07 private messages, and MIP-08 portability are separate
+features. No fixed set of four social kinds is mandatory in the generic core.
+A relay can support a kind without requiring every client to render it.
 
-- `POST /submit`
-- `POST /fetch`
-- `POST /scan`
+Current-view kinds and assisted lookup are optional advertised capabilities.
+The required baseline and complete capability vocabulary must be finalized
+before any implementation claims accepted core compatibility.
 
-### Required Event Kinds
+### What verification means
 
-A compatible relay MUST accept valid events for all base kinds defined by
-[MIP-04](MIP-04.md):
+Event validity has separate layers:
 
-- `0`: `profile`
-- `1`: `post`
-- `2`: `comment`
-- `3`: `reaction`
+1. Parse and envelope validity.
+2. Correct hash and valid signature.
+3. Known-kind semantic validity, when the implementation knows that kind.
+4. Local admission and retention policy.
 
-A compatible relay MAY also accept unknown or experimental kinds if the events
-are valid according to [MIP-01](MIP-01.md) and [MIP-02](MIP-02.md).
+A relay may accept an unknown kind opaquely after the first two layers. It must
+not present it as semantically validated. Refusal at layer 4 does not make a
+cryptographically valid event invalid at layer 2.
 
-### Event Validity
+The connection's IP, a relay account, or transport encryption is not event
+authorship. Clients and relays independently verify received events.
 
-Event validity is protocol-level.
+### Local policy
 
-An event is valid when it satisfies:
+Relays control their own storage, query capacity, moderation, replication peers,
+and operational limits. They may refuse a valid event or stop serving it.
+A declared retention deadline describes a commitment, not proof of compliance;
+MIP-03 must define any exceptions before acceptance.
 
-- the base event format in [MIP-01](MIP-01.md);
-- the signature and id rules in [MIP-02](MIP-02.md);
-- any kind-specific rules understood by the relay.
+Prevent abuse with finite aggregate and per-origin budgets. No mandatory
+CAPTCHA, payment, proof of work, or central ban list is part of this baseline.
+No guarantee is made against volumetric network attacks.
 
-A relay MUST NOT treat transport authentication, IP address, API keys, or local
-accounts as proof of event authorship.
+### Clients, identity, and devices
 
-Authorship is established only by event signatures.
+Users generate and control cryptographic secrets locally. Compatible clients
+need no central permission to participate. Events can be signed, cached, and
+checked before an Internet connection is available.
 
-### No Protocol Login
+The present direct-signing examples use `signer` as the author key. The redesign
+has not adopted root/device delegation, a universal authorization field, key
+rotation, revocation, or a recovery authority.
 
-A compatible relay MUST NOT require email, password, JWT, account login, or API
-key authentication as part of the base Murm Protocol.
+Identity loss and theft need explicit rules. A backup may restore a lost secret;
+it cannot undo the fact that an attacker also has a stolen secret. Author-set
+timestamps cannot prove a signature predates compromise. These issues are open
+design work, not automatic properties of “zero trust.”
 
-Clients publish authorship by submitting signed events.
+MIP-08 distinguishes identity recovery from private-history recovery.
+MIP-09 defines the initial failover/privacy expectations.
 
-Relays MAY use non-protocol operational protections such as rate limiting,
-temporary bans, or abuse prevention. These protections MUST NOT change the event
-format or signature model.
+### Draft readiness
 
-### Relay Refusal
+| Area | Written behavior | Still blocks acceptance |
+| --- | --- | --- |
+| Event envelope and signatures | Eight fields, object-based JCS hash, raw-digest Ed25519. | Cross-library edge-case verification and complete resource policy. |
+| HTTP | Publication, local query, sync, and explicit optional lookup. | Full capabilities/error formats and retention commitments. |
+| Publications | Complete revisions, conflicts, withdrawal, current selection. | Content profile and anti-rollback retention. |
+| Relay network | Best-effort propagation, contacts, bounded lookup, recovery. | Announcement wire schema, key/address authentication, allocations. |
+| Private messages | Asynchronous setup, ratcheting direction, metadata limits. | Complete reviewed cryptographic profile and wire format. |
+| Portability | Local encrypted backup, history/identity separation. | Interoperable export/import and backup cryptography. |
+| Blocking resistance | Cached contacts, alternate relays/addresses, proxy policy. | Concrete stronger transports and evaluation. |
+| Identity lifecycle | No central account; keys under user control. | Loss/theft, rotation, revocation, recovery, devices. |
 
-A relay MAY refuse to store or return an otherwise valid event for operational,
-abuse-prevention, storage, moderation, or legal reasons.
+“Draft” is not a security certification. Applications must identify any
+experimental choices they add instead of presenting private extensions as a
+final Murm profile.
 
-Refusal does not make the event invalid.
+## Canonical Examples
 
-A relay SHOULD report refusal using the structured result format defined by
-[MIP-03](MIP-03.md).
+A relay can verify and store an unknown-kind event but reject a request to
+filter one of its headers. It can support publication history while not
+supporting current view. It can propagate events while declining assisted
+lookup. These are separate advertised choices, not contradictions.
 
-### Limits
-
-A compatible relay MUST support the event size limit defined by
-[MIP-01](MIP-01.md).
-
-A compatible relay MUST support scan requests with `limit <= 100`, subject to
-rate limits and operational abuse prevention.
-
-A compatible relay MUST enforce or respect the kind-specific content limits
-defined by [MIP-04](MIP-04.md) for known base kinds.
-
-### Interoperability
-
-Relays SHOULD keep compatibility behavior stable across deployments.
-
-Relays SHOULD avoid rejecting valid base events only because the relay does not
-need or display that kind locally.
-
-Relays SHOULD avoid introducing required custom fields, custom authentication, or
-custom event validation that prevents ordinary Murm Protocol clients from
-publishing base events.
-
-## Examples
-
-### Valid Event Rejected By Policy
-
-A relay may reject a valid post because a client exceeded a rate limit.
-
-The event remains valid according to [MIP-01](MIP-01.md) and
-[MIP-02](MIP-02.md), but the relay is not required to store it.
-
-```json
-{
-  "results": [
-    {
-      "id": "<event-id>",
-      "accepted": false,
-      "status": "rejected",
-      "reason": "rate_limited"
-    }
-  ]
-}
-```
-
-### Invalid Event Rejected By Protocol
-
-A relay must reject an event with an invalid signature.
-
-```json
-{
-  "results": [
-    {
-      "id": "<event-id>",
-      "accepted": false,
-      "status": "rejected",
-      "reason": "invalid_signature"
-    }
-  ]
-}
-```
+If relay A acknowledges storage and relay B later rejects a copy, A's local
+acknowledgement remains true at the time it was made. It never implied B's
+acceptance or a recipient's delivery.
 
 ## Validation
 
-Clients MAY treat a relay as core-compatible when it supports the required MIPs,
-required operations, and required base kinds defined in this document.
+Before a profile is accepted, check the defining MIPs for:
 
-Relays SHOULD document deviations from this compatibility profile.
+1. Reproducible event IDs and signature rejection behavior.
+2. New versus duplicate submission, truthful local storage results, and limits.
+3. Filter semantics and explicit unsupported-capability errors.
+4. Cursor scope, replay, expiry, late arrivals, and retention loss.
+5. Bounded propagation, one-hop explicit lookup, and relay recovery.
+6. No silent direct connection when a proxy is selected.
+7. No claims of plaintext confidentiality, history recovery, or revocation
+   that the chosen cryptographic profile does not provide.
+8. Compatibility with ordinary clients that do not implement optional kinds.
 
-Relays that require protocol-level login or reject base kinds by design SHOULD
-NOT claim core compatibility.
+## Relay Indexing
+
+The core identifies events by ID and queries signer, kind, and declared time.
+Header indexes belong to kind MIPs and relay capability advertisements.
+A database implementation is not prescribed.
+
+## Compatibility
+
+This draft replaces the old “all kinds 0–3, fixed limits, batch API” profile.
+There is currently no accepted or final compatibility profile. In particular,
+the earlier draft's compatibility claims must not be reused for this redesign.
 
 ## Security Considerations
 
-Compatibility does not require a relay to store spam, abusive traffic, or illegal
-content.
+Replaceable relays and independent verification reduce dependence on operators;
+they do not prevent every operator from censoring its own service. Availability
+requires a reachable retained copy. Signatures do not hide IP addresses,
+metadata, or plaintext public content, and do not prove response completeness.
 
-Relays SHOULD protect themselves with rate limits and abuse controls.
+No protocol can promise delivery when all paths are blocked or all copies are
+gone. No application is made trustworthy merely by implementing the protocol.
 
-Clients SHOULD publish important events to more than one relay.
+## Open Decisions
 
-Clients SHOULD verify event signatures locally even when events come from a
-compatible relay.
+Close the readiness gaps above, choose the exact minimum interoperable profile,
+and define migration/version signaling before acceptance. No root/device-key
+authorization or recovery model is selected by this profile.

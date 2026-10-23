@@ -2,127 +2,183 @@
 
 Status: `draft`
 
+## Kind Allocation
+
+This MIP defines the envelope and allocates no kind.
+
 ## Abstract
 
-This MIP defines the base `Event` object used by the Murm Protocol.
-
-An event is the canonical unit of public content, metadata, and protocol actions
-in murm. Events are authored by public keys, identified by content hashes, and
-validated through cryptographic signatures.
+A Murm event is an immutable, independently verifiable JSON object. The common
+envelope is small; each kind's MIP defines its public metadata and content.
 
 ## Motivation
 
-murm needs a small, stable event format that can move across different transports
-without changing meaning. The same event should be usable over HTTP relays,
-future WebSocket relays, local storage, and future peer-to-peer transports.
-
-The relay should not own user identity or session state. Instead, clients create
-events locally and relays validate those events before storing or distributing
-them.
+Articles, encrypted messages, relay announcements, and future applications
+share integrity and transport rules without sharing an application schema.
+There is no protocol login or identity server.
 
 ## Specification
 
-An event is a JSON object with the following fields:
+### Envelope
 
 ```ts
+type JsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | JsonValue[]
+  | { [key: string]: JsonValue }
+
 type Event = {
+  version: 1
   id: string
-  pubkey: string
+  signer: string
   created_at: number
   kind: number
-  tags: string[][]
-  content: string
-  sig: string
+  header: { [key: string]: JsonValue }
+  content: JsonValue
+  signature: string
 }
 ```
 
-### Fields
+All eight properties are required. Extra top-level properties MUST be rejected,
+not ignored. There are no universal fields for attachments, recipients,
+logical authors, devices, delegations, or forwarding instructions.
 
-- `id`: lowercase hex-encoded hash of the canonical event payload.
-- `pubkey`: lowercase hex-encoded public key of the event author.
-- `created_at`: Unix timestamp in seconds.
-- `kind`: numeric event kind.
-- `tags`: ordered list of tag arrays.
-- `content`: event body as a string.
-- `sig`: lowercase hex-encoded signature proving that `pubkey` authored the event.
+| Field | Meaning |
+| --- | --- |
+| `version` | Core envelope version; not a publication revision. |
+| `id` | Lowercase hexadecimal SHA-256 digest: exactly 64 characters. |
+| `signer` | Ed25519 public signing key, encoded as 64 lowercase hexadecimal characters. |
+| `created_at` | Non-negative safe integer, Unix seconds declared by the signer. |
+| `kind` | Non-negative safe integer; its MIP assigns meaning. |
+| `header` | Public JSON object; nested objects and arrays are allowed. |
+| `content` | Any JSON value permitted by the defining MIP, not necessarily text. |
+| `signature` | 64-byte Ed25519 signature, encoded as 128 lowercase hexadecimal characters. |
 
-### Initial Rules
+Lowercase hexadecimal encodings and safe-integer bounds are concrete choices of
+this rewritten draft. They do not finalize the separate private-message format.
 
-- Events MUST be valid JSON objects.
-- Events MUST contain all required fields.
-- Unknown extra fields SHOULD be ignored by protocol implementations.
-- Unknown extra fields MUST NOT be included when calculating the event `id`.
-- `created_at` MUST be represented as Unix time in seconds, in UTC.
-- `created_at` MUST be an integer.
-- `kind` MUST be an integer.
-- `tags` MUST be an array of arrays of strings.
-- `tags` MAY be an empty array.
-- Each tag inside `tags` MUST contain at least two strings: a tag name and a tag value.
-- Tag names SHOULD be explicit, readable names such as `event`, `pubkey`, or `topic`.
-- `content` MUST be a string, including when it stores encoded structured data.
-- The serialized event JSON MUST NOT exceed 2 MiB.
-- Relays MUST validate `id` and `sig` before accepting an event.
-- Relays SHOULD reject events with `created_at` more than 30 minutes in the future.
-- Relays MUST treat repeated submissions of the same `id` as idempotent.
+A signer identifies the signing key, not necessarily a human or a logical
+author with multiple devices. Device authorization and identity recovery are
+not defined by this envelope.
 
-## Examples
+### JSON input
+
+JSON is UTF-8. Implementations MUST reject duplicate object member names at any
+depth, non-finite numbers, invalid Unicode, and lone surrogates. Strings MUST
+NOT be Unicode-normalized during validation or signing.
+
+Numbers use the IEEE 754 binary64 representation required by
+[JCS](https://www.rfc-editor.org/rfc/rfc8785.html).
+Integral values MUST be within `-9007199254740991` to `9007199254740991`.
+Kinds and timestamps additionally require non-negative values. Larger exact
+integers must be represented as strings if their MIP permits them.
+Negative zero follows JCS normalization to zero; it has no distinct meaning.
+
+These checks apply recursively, including to unknown fields. Parsing that
+silently drops duplicate members before validation is not sufficient.
+
+### Kind-defined behavior
+
+The defining MIP specifies:
+
+- Required, optional, and unknown-field behavior inside `header` and `content`.
+- Semantic validation, relationships, and limits.
+- Public header paths eligible for filtering.
+- Any logical grouping, revision preference, or current-view behavior.
+
+Unknown or unsupported kinds MAY be stored opaquely according to relay policy,
+after envelope, ID, and signature verification. A relay MUST NOT describe such
+storage as semantic validation or silently infer semantics from kind numbers.
+
+### Immutability and local state
+
+All of `header` and `content` participate in the hash. Removing an unknown
+field before hashing or forwarding is invalid.
+
+Changing signed data creates another ID. Formatting differences in JSON are not
+different events when the canonical signed value is unchanged.
+
+Retention deadlines, admission order, synchronization cursors, propagation
+attempts, and delivery state are relay-local information, not signed fields.
+Repeated valid submissions with the same ID do not create additional events.
+
+### Limits and time
+
+Relays publish their size and resource limits through MIP-03. There is no
+universal 2 MiB limit inherited from the earlier draft. Enforce finite decoded
+byte and nesting limits before expensive validation; local refusal is distinct
+from an event's cryptographic validity.
+
+`created_at` is not trusted evidence of creation time, arrival order, or whether
+an event preceded a key compromise. Future-clock admission policy is local and
+must not be mistaken for a global timestamp rule.
+
+## Canonical Examples
+
+This complete event uses the public example key from MIP-02. Its article body
+is illustrative; the final publication content profile remains open in MIP-04.
 
 ```json
 {
-  "id": "<event-id>",
-  "pubkey": "<author-public-key>",
+  "version": 1,
+  "id": "945708370d265a3825922c890b2ac7f09fb0d5a68fa5e12e9b768ec0e3790791",
+  "signer": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
   "created_at": 1710000000,
   "kind": 1,
-  "tags": [
-    ["topic", "murm"]
-  ],
-  "content": "hello murm",
-  "sig": "<signature>"
-}
-```
-
-An event without tags is valid:
-
-```json
-{
-  "id": "<event-id>",
-  "pubkey": "<author-public-key>",
-  "created_at": 1710000000,
-  "kind": 1,
-  "tags": [],
-  "content": "hello murm",
-  "sig": "<signature>"
-}
-```
-
-The following tag values are invalid because each tag must contain at least two
-strings:
-
-```json
-{
-  "tags": [
-    [],
-    ["topic"]
-  ]
+  "header": {
+    "publication": "hello-murm",
+    "revision": 1,
+    "status": "published"
+  },
+  "content": "Hello Murm.",
+  "signature": "8ab72b5776fbd22b5530c93e7262012b94a73b37c4e9f097d9bf4f8d0d738cb3f517c8b3ebb4e8c3ffb894769b5448a532b1674e2357caa0c051f7c725b4fc01"
 }
 ```
 
 ## Validation
 
-Detailed hashing and signature validation rules are defined outside this MIP.
-At minimum, an implementation must be able to:
+1. Bound wire size, decompression, and parse depth.
+2. Parse one object using the JSON input rules.
+3. Check the eight fields, types, version, and encodings.
+4. Recompute the ID and verify the signature under MIP-02.
+5. Validate known kinds under their MIP; otherwise apply opaque-kind policy.
+6. Apply local acceptance policy before reporting storage.
 
-1. Reconstruct the canonical payload.
-2. Recalculate the event `id`.
-3. Compare the calculated `id` with `event.id`.
-4. Verify `event.sig` against `event.pubkey` and `event.id`.
+Unknown versions MUST cause an explicit unsupported-version failure, not an
+attempt to process the object as version 1. MIP-03 tracks the remaining error
+wire-format decisions.
+
+## Relay Indexing
+
+Core operations address IDs and filter by `kind`, `signer`, and `created_at`.
+MIP-03 defines their request syntax. Kind MIPs define header filters.
+
+There is no universal `author` filter and no core filtering of `content`.
+A future author/device relationship needs explicit semantics, not a hidden
+alias for `signer`.
+
+## Compatibility
+
+This envelope replaces the previous draft's extra `author` and `authorization`
+fields and its different hash input. Old signed events MUST NOT be rewritten
+and passed off as valid events in the new format.
 
 ## Security Considerations
 
-Relays MUST NOT treat transport-level authentication as proof of authorship.
-Authorship is established only by event signatures.
+A valid signature proves integrity and control of a key. It does not prove
+truth, human identity, non-spam behavior, complete search results, or retention.
+Clients and relays MUST independently verify received events.
 
-Clients SHOULD treat unsigned, invalid, or partially validated events as
-untrusted data.
+Application content and external URLs remain untrusted. Use local secret
+storage and established cryptographic libraries. Public metadata is visible
+even when the body contains ciphertext.
 
-Relays SHOULD enforce size limits before doing expensive validation work.
+## Open Decisions
+
+Before acceptance, define a common resource-limit advertisement, timestamp
+policy vocabulary, and interoperability treatment of signature edge cases
+across supported libraries. Logical identity and device management remain
+separate design work; no device-key proposal is implicitly approved here.

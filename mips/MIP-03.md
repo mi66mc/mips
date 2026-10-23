@@ -1,403 +1,453 @@
-# MIP-03: Relay Interface
+# MIP-03: Relay HTTP Interface
 
 Status: `draft`
 
+## Kind Allocation
+
+This MIP allocates no event kind.
+
 ## Abstract
 
-This MIP defines the minimal relay interface for the Murm Protocol.
-
-A relay is a verifiable event store. It accepts signed events, returns events by
-identifier, and scans stored events by deterministic filters. The interface is
-defined as transport-neutral operations with an initial HTTP binding.
+The HTTP interface publishes, retrieves, queries, and synchronizes signed events
+without protocol accounts. Local storage, replication, and assisted lookup are
+different operations with different guarantees.
 
 ## Motivation
 
-murm is local-first. Clients may keep their own local event store and use relays
-to publish, discover, and synchronize signed events.
-
-The relay interface should not be designed as a social feed API. It should be a
-small set of event-store primitives that can later be mapped to HTTP,
-WebSocket, peer-to-peer transports, or local adapters without changing event
-semantics.
+Clients should be portable between relays. A relay may restrict its resources
+but must not silently change filters, invent delivery guarantees, or make local
+absence look like proof of global absence.
 
 ## Specification
 
-Relays expose three logical operations:
+### Operations and representation
 
-- `submit`: accept one or more signed events.
-- `fetch`: return events by exact event id.
-- `scan`: return events matching one or more filters.
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/events` | Submit one complete signed event. |
+| `GET` | `/events/{id}` | Fetch one locally available event. |
+| `QUERY` | `/events` | Filter local events. |
+| `POST` | `/events/query` | Compatibility form of the same query. |
+| `QUERY` | `/events/sync` | Follow the relay's local admission stream. |
+| `POST` | `/events/sync` | Compatibility form of synchronization. |
+| `GET` | `/info` | Discover capabilities, limits, and policies. |
+| `GET` | `/relays` | Obtain public signed relay announcements under MIP-06. |
+| `GET` | `/events/{id}?lookup=true` | Explicit, optional, bounded assisted lookup. |
 
-Relays MUST validate events according to [MIP-01](MIP-01.md) and
-[MIP-02](MIP-02.md) before storing them.
-Relays MAY apply local policy such as rate limits, storage limits, moderation
-rules, or accepted event kinds.
+There is no login, registration, session, API token, `PUT` update, or `forward`
+operation. The body of `POST /events` is the event itself, not a batch wrapper.
 
-### Event Filter
+Request bodies and successful JSON responses use UTF-8 and
+`Content-Type: application/json`. JSON input follows MIP-01. Implementations
+bound compressed input, decompressed bytes, parse depth, and response size.
 
-An event filter is a JSON object with the following shape:
+Query, synchronization, filter, and condition request objects are closed:
+unknown members are rejected. Response metadata is extensible; clients may
+ignore unknown response metadata, but MUST preserve and verify complete events.
 
-```ts
-type EventFilter = {
-  ids?: string[]
-  authors?: string[]
-  kinds?: number[]
-  tags?: string[][]
-  since?: number
-  until?: number
-}
-```
+`QUERY` follows [RFC 10008](https://www.rfc-editor.org/rfc/rfc10008.html).
+Its POST alternative has identical query and cursor semantics. Clients may
+use the alternative when the method is rejected by their HTTP stack or an
+intermediary, or receives `405`/`501`. They MUST NOT treat a semantic validation
+error as a reason to bypass validation through the other endpoint.
 
-Filter fields are optional.
+Browser-facing relays need appropriate CORS configuration for the methods and
+headers they offer. Additional standard HTTP methods do not alter Murm semantics.
 
-Within a single filter:
+### Capabilities and policy
 
-- Different fields are combined with `AND`.
-- Values inside `ids`, `authors`, and `kinds` are combined with `OR`.
-- Tags inside `tags` are combined with `AND`.
-- `since` matches events with `created_at >= since`.
-- `until` matches events with `created_at <= until`.
-
-When a request contains multiple filters, filters are combined with `OR`.
-
-Each tag filter MUST contain at least two strings: a tag name and a tag value.
-An event matches a tag filter when it contains a tag with the same name and the
-same value in the first two positions.
-
-For example, this filter:
+`GET /info` returns `200`. This partial example fixes the names already used in
+the design; it is not the complete capabilities wire format:
 
 ```json
 {
-  "kinds": [1],
-  "tags": [
-    ["topic", "murm"],
-    ["lang", "pt"]
+  "versions": [1],
+  "validated_kinds": [1],
+  "accept_unknown_kinds": true,
+  "limits": {
+    "event_bytes": 1048576,
+    "query_results": 100
+  },
+  "header_filters": [
+    {"kind": 1, "path": "/publication", "ops": ["eq"]},
+    {"kind": 1, "path": "/topics", "ops": ["contains"]},
+    {"kind": 1, "path": "/language", "ops": ["eq"]}
   ]
 }
 ```
 
-matches events where:
+The numbers are example relay policy, not universal protocol constants.
+A kind may only be advertised as validated when its complete semantics are
+implemented; the partial publication profile in this draft still needs the
+MIP-04 decisions closed before such a claim is interoperable.
 
-```txt
-kind is 1
-AND tag ["topic", "murm"] exists
-AND tag ["lang", "pt"] exists
+The complete announcement must also identify current-view kinds, lookup
+support and budgets, retention, supported methods, synchronization, and resource
+limits. Those additional field names remain open; clients cannot infer them
+from `validated_kinds` or mere storage of a kind.
+
+Announced limits describe capacity, not unconditional acceptance. Load,
+moderation, storage pressure, and other local policy can still cause refusal.
+A relay MUST distinguish opaque kind acceptance from semantic validation.
+
+### Publication and retention
+
+`POST /events` accepts one full event, verifies it, and applies local policy.
+It does not require the connection's caller to be the signer.
+
+For a new event accepted and stored:
+
+```http
+HTTP/1.1 201 Created
+Location: /events/945708370d265a3825922c890b2ac7f09fb0d5a68fa5e12e9b768ec0e3790791
+Content-Type: application/json
 ```
 
-### Ordering
-
-Scan results MUST be ordered by `created_at`.
-
-The default order is `desc`.
-
-When two events have the same `created_at`, relays MUST order them by `id` in
-ascending lexicographic order.
-
-### Limits
-
-If `limit` is omitted, relays SHOULD use a default limit of 20.
-
-Relays MUST NOT return more than 100 events in a single `scan` response unless a
-future MIP defines a larger negotiated limit.
-
-Requests with `limit` greater than 100 MUST be rejected.
-
-Relays MAY return fewer events than requested.
-
-### Cursors
-
-Scan pagination uses opaque cursors.
-
-Clients MUST NOT parse or construct cursors. A cursor is meaningful only to the
-relay that created it.
-
-If `cursor` is `null` or omitted, the relay starts a new scan.
-
-If more matching events may be available, the relay SHOULD return a non-null
-`cursor`. If no more events are available, the relay SHOULD return `null`.
-
-## HTTP Binding
-
-The initial HTTP binding uses JSON request and response bodies.
-
-All endpoints in this MIP use `POST`, including read operations. This keeps the
-interface consistent with batch requests, structured filters, future transports,
-and local-first synchronization.
-
-### HTTP Status Codes
-
-Relays SHOULD use HTTP status codes for request-level failures and structured
-JSON for operation-level results.
-
-- `200 OK`: request envelope is valid; operation results are returned in JSON.
-- `400 Bad Request`: request body is not valid JSON or does not match the request shape.
-- `413 Payload Too Large`: request body exceeds relay limits.
-- `429 Too Many Requests`: request was rate-limited.
-- `500 Internal Server Error`: relay failed unexpectedly.
-
-For batch operations, one invalid event MUST NOT cause the entire request to
-fail if the request envelope itself is valid. Per-event failures MUST be reported
-inside the JSON response.
-
-### POST /submit
-
-Submits one or more signed events.
-
-Request:
-
-```ts
-type SubmitRequest = {
-  events: Event[]
+```json
+{
+  "id": "945708370d265a3825922c890b2ac7f09fb0d5a68fa5e12e9b768ec0e3790791",
+  "status": "stored",
+  "retain_until": 1800000000
 }
 ```
 
-Response:
+For a valid duplicate still stored, return `200`:
 
-```ts
-type SubmitResponse = {
-  results: SubmitResult[]
-}
-
-type SubmitResult = {
-  id: string | null
-  accepted: boolean
-  status: "stored" | "duplicate" | "rejected"
-  reason?: string
+```json
+{
+  "id": "945708370d265a3825922c890b2ac7f09fb0d5a68fa5e12e9b768ec0e3790791",
+  "status": "already_stored",
+  "retain_until": 1800000000
 }
 ```
 
-Rules:
+`retain_until` is the relay's declared retention deadline in Unix seconds.
+`null` means no minimum retention promise, not forever. A dishonest or failed
+relay can violate its promise; an acknowledgement is not a cryptographic proof
+of future storage.
 
-- Relays MUST process each event independently.
-- Relays MUST NOT store invalid events.
-- Repeated submissions of the same valid event id MUST be idempotent.
-- A duplicate event SHOULD return `accepted: true` and `status: "duplicate"`.
-- `reason` SHOULD be a stable machine-readable string when `accepted` is false.
+Duplicate submission does not automatically renew retention, add another
+admission, or restart propagation. Reformatting equivalent JSON is not a new
+event. Even a duplicate submission must pass event validation.
 
-### POST /fetch
+A seen-ID record without the content is not `already_stored`. If the relay
+accepts and stores a previously evicted event again, it is a new local admission.
 
-Fetches events by exact id.
+The acknowledgement confirms local storage only. It does not confirm replicas,
+recipient delivery, or reading. Insufficient storage must cause refusal before
+acknowledgement. Propagation exhaustion does not reverse a local storage success.
+Automatic propagation and duplicate suppression follow MIP-06.
 
-Request:
+### Exact retrieval and assisted lookup
+
+`GET /events/{id}` returns the full signed event with `200` when locally
+available. Malformed IDs fail explicitly; a valid ID unavailable here returns
+`404`. The client MUST independently verify the event.
+
+The default request performs no network search. `lookup=true` explicitly asks
+for MIP-06 bounded lookup if enabled. Disabled lookup returns an explicit error,
+not a silent local-only answer. Queries and sync never acquire lookup behavior.
+
+Exact copies may be cached and verified locally. Neither an old cached copy nor
+a successful fetch proves present relay retention or the current state of a
+publication.
+
+### Query shape
 
 ```ts
-type FetchRequest = {
-  ids: string[]
+type HeaderCondition = {
+  path: string
+  op: "eq" | "contains"
+  value: JsonValue
 }
-```
 
-Response:
-
-```ts
-type FetchResponse = {
-  events: Event[]
-  missing: string[]
+type Filter = {
+  kinds?: number[]
+  signers?: string[]
+  since?: number
+  until?: number
+  header?: HeaderCondition[]
 }
-```
 
-Rules:
-
-- `ids` MUST contain at least one event id.
-- Relays SHOULD preserve request order when returning `events`.
-- `missing` MUST contain requested ids that were not found.
-
-### POST /scan
-
-Scans stored events using one or more filters.
-
-Request:
-
-```ts
-type ScanRequest = {
-  filters: EventFilter[]
-  limit?: number
+type EventQuery = {
+  filters: Filter[]
+  limit: number
   cursor?: string | null
-  order?: "asc" | "desc"
+  view?: "current"
 }
 ```
 
-Response:
+Concrete query defaults in this rewrite:
+
+- `filters` is a non-empty array; `[{}]` explicitly requests all locally
+  queryable events, subject to policy. An empty `filters` array is invalid.
+- If present, `kinds` and `signers` are non-empty arrays of valid values.
+- `since` and `until` are non-negative safe-integer timestamps; when both are
+  present, `since` must be less than `until`.
+- `header`, if present, is a non-empty array of conditions.
+- `limit` is a required positive safe integer within the advertised result limit.
+- `cursor` is omitted or `null` for the first page.
+- `view` is omitted for raw events; the only defined explicit value is `current`.
+
+All conditions inside one filter are ANDed. Filter objects are ORed.
+Values within `kinds` or `signers` are alternatives. Matching several filters
+does not duplicate an event in the result.
+
+`since` is inclusive and `until` is exclusive, using the author's declared
+`created_at`. They are not admission-time filters.
+
+### Header filtering
+
+`path` uses [RFC 6901 JSON Pointer](https://www.rfc-editor.org/rfc/rfc6901.html),
+relative to `header`. `/topics` addresses `header.topics`, not a top-level field
+and not `header.header.topics`.
+
+- `eq` is exact typed JSON equality without string/number coercion.
+- Structured equality compares JCS representations.
+- `contains` is exact membership of an array, not substring or full-text search.
+- Missing fields do not match, including `eq` with `null`.
+- A present `null` can equal `null`.
+- An incompatible field type does not match; an unsupported requested
+  path/operator combination rejects the whole request.
+
+A filter using header conditions must explicitly restrict `kinds` to kinds
+for which every requested path/operator is advertised. This avoids ambiguous
+cross-kind interpretation. Unsupported conditions MUST NOT be ignored, dropped
+from an OR branch, or replaced by an unbounded scan.
+
+The core interface does not search `content`, including encrypted plaintext.
+It defines no arbitrary sorting or additional legacy operators.
+
+### Ordering and raw pagination
+
+This rewritten draft chooses `created_at` descending, then hexadecimal ID
+descending, for raw and current query results. This resolves the previously
+open generic-query tie direction; it is not proof of chronological creation.
+
+A successful query returns:
 
 ```ts
-type ScanResponse = {
+type QueryResponse = {
   events: Event[]
+  next_cursor: string | null
+}
+```
+
+`next_cursor: null` means the traversal has ended. A non-null cursor is opaque,
+bound to that relay and the canonical request with `cursor` omitted, including
+filters, limit, and view. Reuse with a different query is invalid.
+
+Raw queries use live keyset continuation: return matching events strictly after
+the previous sort boundary. New arrivals before that boundary are missed by
+this traversal; later ones can appear. Removed events disappear. Results do
+not form a fixed snapshot, and IDs already passed do not repeat.
+
+Expired cursors fail explicitly; they MUST NOT silently restart. Pagination
+does not replace the admission-based synchronization operation.
+
+### Current view
+
+`view: current` is optional per kind and must be advertised. Every filter must
+explicitly list supported kinds in this mode. A requested unsupported kind
+rejects the query rather than falling back to raw results.
+
+For each supported logical publication, first choose the preferred valid
+revision using its MIP, then apply the result filters. No filter, including
+status, topic, revision, or date, may eliminate a newer revision before this
+selection and thereby resurrect an older matching one.
+
+A withdrawn preferred revision is returned unless the filters exclude it.
+A published-only filter excludes that publication; it does not return an older
+published revision. Raw queries and exact retrieval remain available.
+
+The draft chooses a first-page snapshot of selected current-event IDs for
+current-view pagination. New revisions belong to a new traversal. If a selected
+event is no longer servable, omit it, never substitute another revision.
+Cursors must advance through omitted positions; bounded snapshot expiration
+returns an explicit cursor error. A relay unable to provide this behavior must
+not advertise current-view pagination.
+
+MIP-04's retention/anti-rollback requirement also applies before selection.
+Snapshotting is not permission to forget a known withdrawal and call a lower
+retained revision current in a later traversal.
+
+This is a local projection, not a claim to know the global newest revision.
+
+### Synchronization
+
+Both sync methods accept:
+
+```ts
+type SyncRequest = {
+  filters: Filter[]
   cursor: string | null
+  limit: number
+}
+
+type SyncResponse = {
+  events: Event[]
+  cursor: string
   has_more: boolean
 }
 ```
 
-Rules:
+Filters have the same meaning and validation as ordinary query filters.
+`view` is not a sync option. `cursor: null` starts from the matching retained
+history available in the relay's local admission stream.
 
-- `filters` MUST contain at least one filter.
-- `order` defaults to `desc`.
-- `limit` defaults to 20.
-- `limit` MUST NOT exceed 100.
-- Empty filter objects MAY be accepted only when `limit <= 20`.
-- Relays MAY reject empty filter objects by policy.
-- If `has_more` is false, `cursor` SHOULD be `null`.
+The stream is ordered by local admission, not `created_at`. It therefore includes
+old events that arrive late. The order and cursor are local metadata outside
+the event signature.
 
-## Examples
+- `has_more: true` means continue immediately from the returned cursor.
+- `has_more: false` means caught up at that instant; keep the returned cursor
+  for later polling.
+- A repeated submission while stored is not a new admission.
+- An evicted event accepted again is a new admission; consumers deduplicate IDs.
+- A marker is scoped to the relay and filters. A batch limit may change between
+  sync requests without changing the subscription.
+- An expired or invalidated history marker returns `cursor_expired`. Restart
+  from retained history and deduplicate; do not jump silently to the present.
+- The marker can advance over non-matching or no-longer-retained records.
+  Empty batches may therefore still advance it.
 
-### Submit One Event
+Clients validate and process the batch, persist accepted events, and only then
+save the returned marker. After interruption they may safely replay a batch.
 
-```http
-POST /submit
-Content-Type: application/json
+Rejected or malformed peer events require a local bounded quarantine/skip
+policy; they must not be stored as valid. A receiver that elects to stop must
+not save the next marker. Exact interoperable error/recovery signaling for such
+batches remains an open decision.
 
+To follow publications, subscribe using stable identity/type information, not
+only a mutable topic or published-only status. Otherwise withdrawals and edits
+that stop matching can be missed. MIP-06 uses the same sync for relay recovery.
+
+### Failure classes and abuse controls
+
+Distinguish invalid data, unsupported capability, local policy refusal, and
+temporary overload. A valid event refused by one relay may be accepted elsewhere.
+
+Use `429` for excessive requests, with `Retry-After` when an estimate exists,
+as in [RFC 6585](https://www.rfc-editor.org/rfc/rfc6585.html#section-4).
+The code `cursor_expired` is reserved for an unusable sync history marker.
+The remaining error envelope and code-to-status table are not frozen yet.
+
+Do not impose mandatory login, CAPTCHA, payment, or proof of work in this core.
+Combine per-origin controls with aggregate storage, CPU, request, bandwidth,
+queue, and query-complexity budgets. Keys are cheap to create; IPs can represent
+many people. Neither is a reliable one-person quota.
+
+## Canonical Examples
+
+### Articles by one signer, topic, and language
+
+The kind is the current draft publication reservation. The header fields require
+support advertised by the relay.
+
+```json
 {
-  "events": [
-    {
-      "id": "7b0f8b8f5f5e9fd1a76dcf4db5a70fbb7d17c0464fdc2fa2be4d9e9b8e2d6c41",
-      "pubkey": "9f2c4b6a0d8e1f3377a1b25c94f0e8d6aa11223344556677889900aabbccddeeff",
-      "created_at": 1710000000,
-      "kind": 1,
-      "tags": [
-        ["topic", "murm"]
-      ],
-      "content": "hello murm",
-      "sig": "<64-byte-ed25519-signature-hex>"
-    }
-  ]
+  "filters": [{
+    "kinds": [1],
+    "signers": ["d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"],
+    "since": 1710000000,
+    "until": 1720000000,
+    "header": [
+      {"path": "/topics", "op": "contains", "value": "tecnologia"},
+      {"path": "/language", "op": "eq", "value": "pt-BR"}
+    ]
+  }],
+  "limit": 20
 }
 ```
 
-### Submit Batch
+### Raw revision history
 
-```http
-POST /submit
-Content-Type: application/json
-
+```json
 {
-  "events": [
-    {
-      "id": "<profile-event-id>",
-      "pubkey": "<pubkey>",
-      "created_at": 1710000000,
-      "kind": 0,
-      "tags": [],
-      "content": "{\"name\":\"alice\",\"about\":\"writing about local-first software\"}",
-      "sig": "<sig>"
-    },
-    {
-      "id": "<post-event-id>",
-      "pubkey": "<pubkey>",
-      "created_at": 1710000100,
-      "kind": 1,
-      "tags": [
-        ["topic", "murm"],
-        ["lang", "pt"]
-      ],
-      "content": "# Primeiro post\n\nTexto do artigo...",
-      "sig": "<sig>"
-    }
-  ]
+  "filters": [{
+    "kinds": [1],
+    "signers": ["d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"],
+    "header": [{"path": "/publication", "op": "eq", "value": "artigo-123"}]
+  }],
+  "limit": 20
 }
 ```
 
-### Fetch One Event
+Adding `view: current` requests the preferred revision only. Adding a `/revision`
+equality condition without a view searches that historical revision number;
+concurrent events may share that number. An exact ID identifies one edition.
 
-```http
-POST /fetch
-Content-Type: application/json
+### Empty query result
 
-{
-  "ids": [
-    "7b0f8b8f5f5e9fd1a76dcf4db5a70fbb7d17c0464fdc2fa2be4d9e9b8e2d6c41"
-  ]
-}
+```json
+{"events": [], "next_cursor": null}
 ```
 
-### Fetch Multiple Events
+### Start a sync that includes withdrawals
 
-```http
-POST /fetch
-Content-Type: application/json
-
+```json
 {
-  "ids": [
-    "<profile-event-id>",
-    "<post-event-id>",
-    "<comment-event-id>"
-  ]
-}
-```
-
-### Scan Author Posts
-
-```http
-POST /scan
-Content-Type: application/json
-
-{
-  "filters": [
-    {
-      "authors": [
-        "9f2c4b6a0d8e1f3377a1b25c94f0e8d6aa11223344556677889900aabbccddeeff"
-      ],
-      "kinds": [1]
-    }
-  ],
-  "limit": 20,
+  "filters": [{
+    "kinds": [1],
+    "signers": ["d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"]
+  }],
   "cursor": null,
-  "order": "desc"
+  "limit": 100
 }
 ```
 
-### Scan Posts By Topic And Language
+Illustrative caught-up response; the cursor string is a placeholder:
 
-```http
-POST /scan
-Content-Type: application/json
-
-{
-  "filters": [
-    {
-      "kinds": [1],
-      "tags": [
-        ["topic", "murm"],
-        ["lang", "pt"]
-      ]
-    },
-    {
-      "kinds": [1],
-      "tags": [
-        ["topic", "local-first"],
-        ["lang", "pt"]
-      ]
-    }
-  ],
-  "limit": 50,
-  "cursor": null,
-  "order": "desc"
-}
-```
-
-This means:
-
-```txt
-(kind is 1 AND topic is murm AND lang is pt)
-OR
-(kind is 1 AND topic is local-first AND lang is pt)
+```json
+{"events": [], "cursor": "<relay-and-filter-bound-marker>", "has_more": false}
 ```
 
 ## Validation
 
-Relays SHOULD validate requests before performing storage or scan work.
+Before accepting this MIP, implementations must agree on the complete error and
+capability formats and demonstrate:
 
-Relays SHOULD reject malformed request bodies with a stable error response.
+- New storage versus valid duplicate, including equivalent JSON formatting.
+- Refusal before acknowledging unavailable storage.
+- AND/OR, typed equality, missing versus null, and inclusive/exclusive time bounds.
+- Explicit rejection of unsupported filters, kinds in current view, and lookup.
+- Local-only reads without explicit lookup.
+- Current selection before filtering, conflicts, withdrawal, and retention loss.
+- Cursor binding, expiry, empty batches, and concurrent arrivals.
+- Late old events visible to sync despite being missed by raw pagination.
+- Identical results and cursor meanings through both HTTP method forms.
 
-Relays MUST NOT return events that fail [MIP-01](MIP-01.md) or
-[MIP-02](MIP-02.md) validation.
+## Relay Indexing
+
+Indexing strategy is local. Externally visible semantics must match these
+filters, the kind MIP, and advertised capabilities. No database collation may
+introduce implicit case folding or other equality changes.
+
+## Compatibility
+
+This replaces the previous `where/all/sort` query language, batch publication,
+and `page.next` responses. Supporting that earlier draft requires an explicit
+separate compatibility interface, not silently accepting ambiguous objects.
+
+The optional current view and lookup are independently advertised. No accepted
+minimum profile exists until the open decisions in MIP-05 are resolved.
 
 ## Security Considerations
 
-Relays SHOULD enforce request body size limits.
+Returned events and announcements are untrusted until verified. Cursors must
+not expose SQL, internal topology, or secrets. Error messages must not expose
+private policy records, stack traces, or key material.
 
-Relays SHOULD enforce rate limits for `submit`, `fetch`, and `scan`.
+Searches reveal interests to the contacted relay; lookup reveals a requested ID
+to additional peers. Signed events provide no completeness proof. Resource
+limits mitigate work amplification but cannot guarantee survival of a network
+link saturated by an attacker.
 
-Relays SHOULD avoid exposing cursor internals, database ids, or storage topology.
+## Open Decisions
 
-Relays MAY reject expensive scans or require narrower filters.
-
-Clients MUST treat relay responses as untrusted until event signatures are
-verified locally.
+Freeze the complete `/info` vocabulary, error envelope/status table, retention
+renewal and exceptions, query/sync/cursor budget descriptors, and failure
+handling for partially processable sync batches. Validate the draft pagination
+choices under concurrent updates and eviction. These are protocol decisions,
+not missing implementation tasks to be guessed by clients.
