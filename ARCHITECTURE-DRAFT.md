@@ -44,7 +44,7 @@ Zero trust, aqui, significa não precisar acreditar no relay para verificar a
 origem criptográfica e a integridade do evento. Não significa que uma assinatura
 prove a verdade do conteúdo, a honestidade do autor ou que a busca está completa.
 
-O objetivo é aumentar a resistência à censura e a dependência de qualquer
+O objetivo é aumentar a resistência à censura e reduzir a dependência de qualquer
 operador. Não existe promessa de funcionamento quando todos os caminhos estão
 bloqueados ou todas as cópias desapareceram.
 
