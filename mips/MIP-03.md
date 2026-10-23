@@ -4,812 +4,450 @@ Status: `draft`
 
 ## Kind Allocation
 
-This MIP defines transport operations and allocates no event kind.
+This MIP allocates no event kind.
 
 ## Abstract
 
-This MIP defines the initial HTTP interface for Murm relays. Clients can
-discover relay capabilities, submit signed events, fetch immutable events by
-ID, and query indexed event fields with the safe and idempotent HTTP `QUERY`
-method from RFC 10008.
+The HTTP interface publishes, retrieves, queries, and synchronizes signed events
+without protocol accounts. Local storage, replication, and assisted lookup are
+different operations with different guarantees.
 
 ## Motivation
 
-Relays should behave as generic, verifiable event stores rather than
-application-specific social APIs. The transport must support structured
-filters, bounded resource use, deterministic pagination, and retries without
-introducing protocol accounts or login.
-
-`GET` is appropriate for exact immutable resources. Complex event searches need
-a request body, so Murm uses `QUERY` rather than encoding large filters into a
-URL or pretending a read is an unsafe operation.
+Clients should be portable between relays. A relay may restrict its resources
+but must not silently change filters, invent delivery guarantees, or make local
+absence look like proof of global absence.
 
 ## Specification
 
-### Resources
+### Operations and representation
 
-Core-compatible relays expose:
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/events` | Submit one complete signed event. |
+| `GET` | `/events/{id}` | Fetch one locally available event. |
+| `QUERY` | `/events` | Filter local events. |
+| `POST` | `/events/query` | Compatibility form of the same query. |
+| `QUERY` | `/events/sync` | Follow the relay's local admission stream. |
+| `POST` | `/events/sync` | Compatibility form of synchronization. |
+| `GET` | `/info` | Discover capabilities, limits, and policies. |
+| `GET` | `/relays` | Obtain public signed relay announcements under MIP-06. |
+| `GET` | `/events/{id}?lookup=true` | Explicit, optional, bounded assisted lookup. |
 
-```text
-GET     /info
-POST    /events
-GET     /events/{id}
-HEAD    /events/{id}
-QUERY   /events
-POST    /events/query
-OPTIONS /events
-OPTIONS /events/{id}
-```
+There is no login, registration, session, API token, `PUT` update, or `forward`
+operation. The body of `POST /events` is the event itself, not a batch wrapper.
 
-There are no protocol endpoints for registration, login, passwords, sessions,
-JWTs, or API keys.
+Request bodies and successful JSON responses use UTF-8 and
+`Content-Type: application/json`. JSON input follows MIP-01. Implementations
+bound compressed input, decompressed bytes, parse depth, and response size.
 
-All request and response JSON uses UTF-8. Successful JSON responses use
-`Content-Type: application/json`; problem responses use
-`Content-Type: application/problem+json`.
+Query, synchronization, filter, and condition request objects are closed:
+unknown members are rejected. Response metadata is extensible; clients may
+ignore unknown response metadata, but MUST preserve and verify complete events.
 
-MIP-03 JSON uses the MIP-01 JSON value and input restrictions, including
-duplicate-name rejection, finite IEEE 754 numbers, safe integers, and valid
-Unicode.
+`QUERY` follows [RFC 10008](https://www.rfc-editor.org/rfc/rfc10008.html).
+Its POST alternative has identical query and cursor semantics. Clients may
+use the alternative when the method is rejected by their HTTP stack or an
+intermediary, or receives `405`/`501`. They MUST NOT treat a semantic validation
+error as a reason to bypass validation through the other endpoint.
 
-Every request object defined by this MIP is closed: an unknown member makes the
-request an `invalid_request` unless a section explicitly defines that object as
-extensible. Response objects are extensible, and clients MUST ignore response
-members they do not understand. The `limits` and `features` objects returned by
-`GET /info` are explicitly extensible.
+Browser-facing relays need appropriate CORS configuration for the methods and
+headers they offer. Additional standard HTTP methods do not alter Murm semantics.
 
-Body limits apply to the decoded UTF-8 representation. Relays MUST reject an
-oversized body before parsing it into unbounded memory and SHOULD also bound the
-compressed representation.
+### Capabilities and policy
 
-### Relay Information
-
-`GET /info` returns `200 OK` and:
+`GET /info` returns `200`. This partial example fixes the names already used in
+the design; it is not the complete capabilities wire format:
 
 ```json
 {
-  "protocol": "murm",
   "versions": [1],
-  "mips": [1, 2, 3, 4, 5],
+  "validated_kinds": [1],
+  "accept_unknown_kinds": true,
   "limits": {
-    "event_bytes": 2097152,
-    "batch_events": 100,
-    "batch_bytes": 8388608,
-    "query_bytes": 65536,
-    "query_conditions_per_group": 20,
-    "query_groups": 10,
-    "query_in_values": 100,
-    "query_sort_fields": 3,
-    "cursor_bytes": 4096,
-    "query_limit": 100
+    "event_bytes": 1048576,
+    "query_results": 100
   },
-  "features": {
-    "http_query": true,
-    "post_query_fallback": true
-  }
-}
-```
-
-The response has these required rules:
-
-- `protocol` is exactly `"murm"`;
-- `versions` is a non-empty array of unique positive safe integers;
-- `mips` is an array of unique non-negative safe integers;
-- `limits` contains every limit shown above as a non-negative safe integer;
-- `features.http_query` and `features.post_query_fallback` are booleans.
-
-`versions` lists accepted event envelope versions. `mips` lists implemented
-protocol MIPs. In version 1, `event_bytes`, `query_bytes`,
-`query_conditions_per_group`, `query_groups`, `query_in_values`,
-`query_sort_fields`, `cursor_bytes`, and `query_limit` have the exact values
-shown above. A larger value requires a future protocol version that defines how
-clients opt in.
-
-`batch_events` and `batch_bytes` MAY vary. They state, respectively, the maximum
-number of events and maximum decoded UTF-8 bytes accepted in one submission.
-Both limits apply simultaneously. `batch_bytes` MUST be at least 4 MiB. A relay
-MAY advertise additional integer limits and JSON-valued features. Clients MUST
-ignore additional top-level information, limits, and features they do not
-understand.
-
-### Submit Events
-
-`POST /events` accepts:
-
-```ts
-type SubmitRequest = {
-  events: Event[]
-}
-```
-
-The request MUST use `Content-Type: application/json`. A missing or different
-media type MUST fail with `unsupported_media_type`.
-
-`events` contains at least one item and no more than the relay's advertised
-`batch_events` limit. The complete decoded request body MUST NOT exceed the
-advertised `batch_bytes` limit. One item is a single-event submission; multiple
-items form a batch.
-
-`SubmitRequest` is closed. Each event object follows MIP-01, including its rule
-that unknown top-level event members are invalid.
-
-If the request envelope is valid, the relay returns `200 OK` and one result in
-input order for every item:
-
-```ts
-type SubmitResponse = {
-  results: SubmitResult[]
-}
-
-type SubmitResult = {
-  id: string | null
-  accepted: boolean
-  status: "stored" | "duplicate" | "rejected"
-  reason?: string
-}
-```
-
-Rules:
-
-- Each item is validated and processed independently.
-- A malformed item does not reject other items.
-- An item larger than `event_bytes` is rejected with
-  `reason: "content_too_large"` without rejecting other items. A complete
-  request larger than `batch_bytes` is rejected before item processing with
-  `413 Content Too Large` and code `content_too_large`.
-- A newly stored event returns `accepted: true` and `status: "stored"`.
-- An identical, previously stored ID returns `accepted: true` and
-  `status: "duplicate"`.
-- A refused event returns `accepted: false`, `status: "rejected"`, and a stable
-  `reason`. The reason MUST be one of the stable MIP-03 codes defined under
-  HTTP Errors.
-- `id` is `null` only when the relay cannot obtain a syntactically valid event
-  ID from the item.
-- Event IDs provide application-level idempotency. Retrying the same request
-  cannot create a second logical event.
-
-Request-level rate limiting MAY reject the whole operation with `429`. A relay
-that begins processing a valid batch MUST return an individual result for every
-item rather than silently stopping midway.
-
-### Fetch an Event
-
-`GET /events/{id}` fetches one exact event ID. The response content is the
-complete event serialized with RFC 8785 JCS, making the selected representation
-byte-stable across successful fetches.
-
-A found event returns `200 OK`, the complete event JSON, and:
-
-```text
-ETag: "<event-id>"
-Cache-Control: public, max-age=31536000, immutable
-```
-
-The ETag uses the quoted lowercase event ID as a strong entity tag. Relays MUST
-evaluate `If-None-Match` according to RFC 9110, including weak comparison,
-comma-separated entity-tag lists, and `*`. A matching current representation
-returns `304 Not Modified`.
-
-A valid but unavailable ID returns `404 Not Found`. A malformed path ID returns
-`400 Bad Request`.
-
-`HEAD /events/{id}` is identical to `GET /events/{id}` except that it returns no
-response content. It uses the same status, ETag, cache, content-type, and
-conditional-request semantics.
-
-### Query Discovery
-
-`OPTIONS /events` returns:
-
-```text
-Allow: POST, QUERY, OPTIONS
-Accept-Query: "application/vnd.murm.query+json"
-```
-
-`OPTIONS /events/{id}` returns:
-
-```text
-Allow: GET, HEAD, OPTIONS
-```
-
-Relays MAY include other standard discovery and CORS headers.
-
-### Query Events
-
-The primary search operation is:
-
-```http
-QUERY /events
-Content-Type: application/vnd.murm.query+json
-Accept: application/json
-```
-
-`QUERY` is safe and idempotent as defined by RFC 10008. A successful response
-uses `200 OK`.
-
-The `Content-Type` field is mandatory. A missing content type, an unsupported
-media type, or content inconsistent with the declared media type returns
-`415 Unsupported Media Type` with code `unsupported_media_type`, as required by
-RFC 10008.
-
-For compatibility with HTTP clients or intermediaries that reject unknown
-methods, relays MUST also implement:
-
-```http
-POST /events/query
-Content-Type: application/vnd.murm.query+json
-Accept: application/json
-```
-
-The fallback has exactly the same request, validation, result, ordering, and
-cursor semantics, including the mandatory content type. Clients SHOULD use
-`QUERY` first and retry the fallback only after:
-
-- `405 Method Not Allowed`;
-- `501 Not Implemented`; or
-- a local or intermediary failure that specifically rejects the method.
-
-Clients MUST NOT send both operations concurrently for one logical page.
-
-### Query Shape
-
-```ts
-type EventQuery = {
-  where: QueryGroup[]
-  sort?: SortField[]
-  limit?: number
-  cursor?: string | null
-}
-
-type QueryGroup = {
-  all: QueryCondition[]
-}
-
-type QueryCondition = {
-  path: string
-  op: "eq" | "in" | "contains" | "exists" | "gte" | "lte"
-  value: JsonValue
-}
-
-type SortField = {
-  path: string
-  direction: "asc" | "desc"
-}
-```
-
-`where` contains 1 through the advertised `query_groups` groups. Groups are
-combined with `OR`. Each group's `all` contains 1 through the advertised
-`query_conditions_per_group` conditions combined with `AND`.
-
-`sort` contains at most the advertised `query_sort_fields` unique fields.
-`limit` defaults to `20`, has a minimum of `1`, and MUST NOT exceed the
-advertised `query_limit`. `cursor` is `null` or omitted for the first page.
-
-The decoded UTF-8 query body MUST NOT exceed the advertised `query_bytes`. A
-non-null cursor MUST contain at most the advertised `cursor_bytes` in UTF-8.
-`EventQuery`, `QueryGroup`, `QueryCondition`, and `SortField` are closed
-objects.
-
-### Query Paths
-
-Paths are RFC 6901 JSON Pointers into the complete event.
-
-MIP-01 requires support for:
-
-```text
-/id
-/author
-/signer
-/created_at
-/kind
-```
-
-Kind MIPs declare additional indexable and sortable `/header` paths. Relays MUST
-reject an undeclared path with `unsupported_filter`; they MUST NOT silently run
-an unbounded scan.
-
-`/content` and every descendant of `/content` are unavailable to the core query
-interface.
-
-### Operators
-
-- `eq`: the field equals `value`.
-- `in`: the field equals any item in the array `value`, which contains 1
-  through the advertised `query_in_values` unique items.
-- `contains`: the field is an array containing `value`.
-- `exists`: field existence equals the boolean `value`.
-- `gte`: the numeric field is greater than or equal to numeric `value`.
-- `lte`: the numeric field is less than or equal to numeric `value`.
-
-Equality for structured JSON values uses RFC 8785 canonical bytes. `contains`
-does not perform substring or full-text search.
-
-Path resolution distinguishes a missing field from a present field whose value
-is `null`:
-
-- `exists` with `true` matches only a present field;
-- `exists` with `false` matches only a missing field;
-- every other operator evaluates to false when the field is missing;
-- a present `null` value can match `eq: null` or an `in` array containing
-  `null`.
-
-Uniqueness of `in` values uses the same RFC 8785 equality.
-
-Relays MUST reject an operator that is incompatible with the declared type of a
-path. Core path support is:
-
-| Path | Required operators | Sortable |
-| --- | --- | --- |
-| `/id` | `eq`, `in` | yes |
-| `/author` | `eq`, `in` | no |
-| `/signer` | `eq`, `in` | no |
-| `/created_at` | `eq`, `in`, `gte`, `lte` | yes |
-| `/kind` | `eq`, `in` | no |
-
-For MIP-04 header paths:
-
-| Path | Required operators | Sortable |
-| --- | --- | --- |
-| `/header/document` | `eq`, `in` | no |
-| `/header/revision` | `eq`, `in`, `gte`, `lte` | yes |
-| `/header/topics` | `contains`, `exists` | no |
-| `/header/language` | `eq`, `in`, `exists` | no |
-| `/header/root/author` | `eq`, `in` | no |
-| `/header/root/document` | `eq`, `in` | no |
-| `/header/parent` | `eq`, `in`, `exists` | no |
-| `/header/target/type` | `eq`, `in` | no |
-| `/header/target/id` | `eq`, `in`, `exists` | no |
-| `/header/target/author` | `eq`, `in`, `exists` | no |
-| `/header/target/kind` | `eq`, `in`, `exists` | no |
-| `/header/target/document` | `eq`, `in`, `exists` | no |
-
-### Ordering
-
-The default ordering is:
-
-```json
-[
-  {
-    "path": "/created_at",
-    "direction": "desc"
-  },
-  {
-    "path": "/id",
-    "direction": "asc"
-  }
-]
-```
-
-When caller-supplied sorting does not include `/id`, the relay appends `/id`
-ascending as the final deterministic tie-breaker. If the caller supplies
-`/id`, it MUST be the final sort field with direction `asc`; any other
-placement or direction is an `invalid_request`.
-
-A relay MUST reject sorting by a path not declared sortable. It MUST also reject
-a kind-specific sort unless every branch constrains `/kind` to kinds that
-declare the path sortable.
-
-### Pagination
-
-A query returns:
-
-```ts
-type QueryResponse = {
-  events: Event[]
-  page: {
-    next: string | null
-    has_more: boolean
-  }
-}
-```
-
-The response is a set of events keyed by `id`. An event that satisfies multiple
-`OR` groups MUST appear exactly once.
-
-Cursors are opaque and scoped to the relay that issued them. Clients MUST NOT
-parse, edit, or construct cursors. Continuation uses live keyset pagination:
-the relay re-evaluates the query against its currently visible event set and
-returns only events whose complete sort tuple is strictly after the last tuple
-represented by the cursor.
-
-The relay binds a cursor to the RFC 8785 canonical query with `cursor` omitted.
-Changing `where`, `sort`, or `limit` while reusing a cursor returns
-`invalid_cursor`.
-
-If `has_more` is false, `next` MUST be `null`. Relays MAY expire cursors; an
-expired cursor returns `invalid_cursor`. A relay MUST NOT issue a non-null
-`next` value larger than its advertised `cursor_bytes`.
-
-An event returned on an earlier page MUST NOT repeat during the same traversal.
-An event that becomes visible after a page was read is omitted if its sort tuple
-is at or before that page's cursor boundary and MAY appear if its tuple is after
-the boundary. An event that stops being visible is omitted. Cursors do not
-promise a fixed snapshot.
-
-Responses do not include a total count.
-
-## Canonical Examples
-
-### Submit One Event
-
-```http
-POST /events
-Content-Type: application/json
-
-{
-  "events": [
-    {
-      "version": 1,
-      "id": "5b0b000dc2377e137aeaab36f7a5e2f82de104f1dac38162b08efe1bf7d71139",
-      "author": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
-      "signer": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
-      "authorization": null,
-      "created_at": 1710000000,
-      "kind": 1,
-      "header": {
-        "document": "4f5f4c6b5e897c32217a32097510c8d67491c7c9200f2af22c568a5dc2363742",
-        "revision": 1,
-        "previous": null,
-        "title": "Hello Murm"
-      },
-      "content": "# Hello Murm\n\nA signed publication.",
-      "signature": "40adfc83597064286dd51ad195ca613a444b6f9ca8e554da58d0d1c4ae4f10427719c8f941c87a7b8d2b12e0c84bfb80e23f198d20a3c7cefaa68e4612227b03"
-    }
+  "header_filters": [
+    {"kind": 1, "path": "/publication", "ops": ["eq"]},
+    {"kind": 1, "path": "/topics", "ops": ["contains"]},
+    {"kind": 1, "path": "/language", "ops": ["eq"]}
   ]
 }
 ```
 
-### Publications by One Author
+The numbers are example relay policy, not universal protocol constants.
+A kind may only be advertised as validated when its complete semantics are
+implemented; the partial publication profile in this draft still needs the
+MIP-04 decisions closed before such a claim is interoperable.
+
+The complete announcement must also identify current-view kinds, lookup
+support and budgets, retention, supported methods, synchronization, and resource
+limits. Those additional field names remain open; clients cannot infer them
+from `validated_kinds` or mere storage of a kind.
+
+Announced limits describe capacity, not unconditional acceptance. Load,
+moderation, storage pressure, and other local policy can still cause refusal.
+A relay MUST distinguish opaque kind acceptance from semantic validation.
+
+### Publication and retention
+
+`POST /events` accepts one full event, verifies it, and applies local policy.
+It does not require the connection's caller to be the signer.
+
+For a new event accepted and stored:
+
+```http
+HTTP/1.1 201 Created
+Location: /events/945708370d265a3825922c890b2ac7f09fb0d5a68fa5e12e9b768ec0e3790791
+Content-Type: application/json
+```
 
 ```json
 {
-  "where": [
-    {
-      "all": [
-        {
-          "path": "/kind",
-          "op": "eq",
-          "value": 1
-        },
-        {
-          "path": "/author",
-          "op": "eq",
-          "value": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
-        }
-      ]
-    }
-  ],
-  "limit": 20,
-  "cursor": null
+  "id": "945708370d265a3825922c890b2ac7f09fb0d5a68fa5e12e9b768ec0e3790791",
+  "status": "stored",
+  "retain_until": 1800000000
 }
 ```
 
-### Publications Containing a Topic
+For a valid duplicate still stored, return `200`:
 
 ```json
 {
-  "where": [
-    {
-      "all": [
-        {
-          "path": "/kind",
-          "op": "eq",
-          "value": 1
-        },
-        {
-          "path": "/header/topics",
-          "op": "contains",
-          "value": "protocol"
-        }
-      ]
-    }
-  ],
+  "id": "945708370d265a3825922c890b2ac7f09fb0d5a68fa5e12e9b768ec0e3790791",
+  "status": "already_stored",
+  "retain_until": 1800000000
+}
+```
+
+`retain_until` is the relay's declared retention deadline in Unix seconds.
+`null` means no minimum retention promise, not forever. A dishonest or failed
+relay can violate its promise; an acknowledgement is not a cryptographic proof
+of future storage.
+
+Duplicate submission does not automatically renew retention, add another
+admission, or restart propagation. Reformatting equivalent JSON is not a new
+event. Even a duplicate submission must pass event validation.
+
+A seen-ID record without the content is not `already_stored`. If the relay
+accepts and stores a previously evicted event again, it is a new local admission.
+
+The acknowledgement confirms local storage only. It does not confirm replicas,
+recipient delivery, or reading. Insufficient storage must cause refusal before
+acknowledgement. Propagation exhaustion does not reverse a local storage success.
+Automatic propagation and duplicate suppression follow MIP-06.
+
+### Exact retrieval and assisted lookup
+
+`GET /events/{id}` returns the full signed event with `200` when locally
+available. Malformed IDs fail explicitly; a valid ID unavailable here returns
+`404`. The client MUST independently verify the event.
+
+The default request performs no network search. `lookup=true` explicitly asks
+for MIP-06 bounded lookup if enabled. Disabled lookup returns an explicit error,
+not a silent local-only answer. Queries and sync never acquire lookup behavior.
+
+Exact copies may be cached and verified locally. Neither an old cached copy nor
+a successful fetch proves present relay retention or the current state of a
+publication.
+
+### Query shape
+
+```ts
+type HeaderCondition = {
+  path: string
+  op: "eq" | "contains"
+  value: JsonValue
+}
+
+type Filter = {
+  kinds?: number[]
+  signers?: string[]
+  since?: number
+  until?: number
+  header?: HeaderCondition[]
+}
+
+type EventQuery = {
+  filters: Filter[]
+  limit: number
+  cursor?: string | null
+  view?: "current"
+}
+```
+
+Concrete query defaults in this rewrite:
+
+- `filters` is a non-empty array; `[{}]` explicitly requests all locally
+  queryable events, subject to policy. An empty `filters` array is invalid.
+- If present, `kinds` and `signers` are non-empty arrays of valid values.
+- `since` and `until` are non-negative safe-integer timestamps; when both are
+  present, `since` must be less than `until`.
+- `header`, if present, is a non-empty array of conditions.
+- `limit` is a required positive safe integer within the advertised result limit.
+- `cursor` is omitted or `null` for the first page.
+- `view` is omitted for raw events; the only defined explicit value is `current`.
+
+All conditions inside one filter are ANDed. Filter objects are ORed.
+Values within `kinds` or `signers` are alternatives. Matching several filters
+does not duplicate an event in the result.
+
+`since` is inclusive and `until` is exclusive, using the author's declared
+`created_at`. They are not admission-time filters.
+
+### Header filtering
+
+`path` uses [RFC 6901 JSON Pointer](https://www.rfc-editor.org/rfc/rfc6901.html),
+relative to `header`. `/topics` addresses `header.topics`, not a top-level field
+and not `header.header.topics`.
+
+- `eq` is exact typed JSON equality without string/number coercion.
+- Structured equality compares JCS representations.
+- `contains` is exact membership of an array, not substring or full-text search.
+- Missing fields do not match, including `eq` with `null`.
+- A present `null` can equal `null`.
+- An incompatible field type does not match; an unsupported requested
+  path/operator combination rejects the whole request.
+
+A filter using header conditions must explicitly restrict `kinds` to kinds
+for which every requested path/operator is advertised. This avoids ambiguous
+cross-kind interpretation. Unsupported conditions MUST NOT be ignored, dropped
+from an OR branch, or replaced by an unbounded scan.
+
+The core interface does not search `content`, including encrypted plaintext.
+It defines no arbitrary sorting or additional legacy operators.
+
+### Ordering and raw pagination
+
+This rewritten draft chooses `created_at` descending, then hexadecimal ID
+descending, for raw and current query results. This resolves the previously
+open generic-query tie direction; it is not proof of chronological creation.
+
+A successful query returns:
+
+```ts
+type QueryResponse = {
+  events: Event[]
+  next_cursor: string | null
+}
+```
+
+`next_cursor: null` means the traversal has ended. A non-null cursor is opaque,
+bound to that relay and the canonical request with `cursor` omitted, including
+filters, limit, and view. Reuse with a different query is invalid.
+
+Raw queries use live keyset continuation: return matching events strictly after
+the previous sort boundary. New arrivals before that boundary are missed by
+this traversal; later ones can appear. Removed events disappear. Results do
+not form a fixed snapshot, and IDs already passed do not repeat.
+
+Expired cursors fail explicitly; they MUST NOT silently restart. Pagination
+does not replace the admission-based synchronization operation.
+
+### Current view
+
+`view: current` is optional per kind and must be advertised. Every filter must
+explicitly list supported kinds in this mode. A requested unsupported kind
+rejects the query rather than falling back to raw results.
+
+For each supported logical publication, first choose the preferred valid
+revision using its MIP, then apply the result filters. No filter, including
+status, topic, revision, or date, may eliminate a newer revision before this
+selection and thereby resurrect an older matching one.
+
+A withdrawn preferred revision is returned unless the filters exclude it.
+A published-only filter excludes that publication; it does not return an older
+published revision. Raw queries and exact retrieval remain available.
+
+The draft chooses a first-page snapshot of selected current-event IDs for
+current-view pagination. New revisions belong to a new traversal. If a selected
+event is no longer servable, omit it, never substitute another revision.
+Cursors must advance through omitted positions; bounded snapshot expiration
+returns an explicit cursor error. A relay unable to provide this behavior must
+not advertise current-view pagination.
+
+MIP-04's retention/anti-rollback requirement also applies before selection.
+Snapshotting is not permission to forget a known withdrawal and call a lower
+retained revision current in a later traversal.
+
+This is a local projection, not a claim to know the global newest revision.
+
+### Synchronization
+
+Both sync methods accept:
+
+```ts
+type SyncRequest = {
+  filters: Filter[]
+  cursor: string | null
+  limit: number
+}
+
+type SyncResponse = {
+  events: Event[]
+  cursor: string
+  has_more: boolean
+}
+```
+
+Filters have the same meaning and validation as ordinary query filters.
+`view` is not a sync option. `cursor: null` starts from the matching retained
+history available in the relay's local admission stream.
+
+The stream is ordered by local admission, not `created_at`. It therefore includes
+old events that arrive late. The order and cursor are local metadata outside
+the event signature.
+
+- `has_more: true` means continue immediately from the returned cursor.
+- `has_more: false` means caught up at that instant; keep the returned cursor
+  for later polling.
+- A repeated submission while stored is not a new admission.
+- An evicted event accepted again is a new admission; consumers deduplicate IDs.
+- A marker is scoped to the relay and filters. A batch limit may change between
+  sync requests without changing the subscription.
+- An expired or invalidated history marker returns `cursor_expired`. Restart
+  from retained history and deduplicate; do not jump silently to the present.
+- The marker can advance over non-matching or no-longer-retained records.
+  Empty batches may therefore still advance it.
+
+Clients validate and process the batch, persist accepted events, and only then
+save the returned marker. After interruption they may safely replay a batch.
+
+Rejected or malformed peer events require a local bounded quarantine/skip
+policy; they must not be stored as valid. A receiver that elects to stop must
+not save the next marker. Exact interoperable error/recovery signaling for such
+batches remains an open decision.
+
+To follow publications, subscribe using stable identity/type information, not
+only a mutable topic or published-only status. Otherwise withdrawals and edits
+that stop matching can be missed. MIP-06 uses the same sync for relay recovery.
+
+### Failure classes and abuse controls
+
+Distinguish invalid data, unsupported capability, local policy refusal, and
+temporary overload. A valid event refused by one relay may be accepted elsewhere.
+
+Use `429` for excessive requests, with `Retry-After` when an estimate exists,
+as in [RFC 6585](https://www.rfc-editor.org/rfc/rfc6585.html#section-4).
+The code `cursor_expired` is reserved for an unusable sync history marker.
+The remaining error envelope and code-to-status table are not frozen yet.
+
+Do not impose mandatory login, CAPTCHA, payment, or proof of work in this core.
+Combine per-origin controls with aggregate storage, CPU, request, bandwidth,
+queue, and query-complexity budgets. Keys are cheap to create; IPs can represent
+many people. Neither is a reliable one-person quota.
+
+## Canonical Examples
+
+### Articles by one signer, topic, and language
+
+The kind is the current draft publication reservation. The header fields require
+support advertised by the relay.
+
+```json
+{
+  "filters": [{
+    "kinds": [1],
+    "signers": ["d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"],
+    "since": 1710000000,
+    "until": 1720000000,
+    "header": [
+      {"path": "/topics", "op": "contains", "value": "tecnologia"},
+      {"path": "/language", "op": "eq", "value": "pt-BR"}
+    ]
+  }],
   "limit": 20
 }
 ```
 
-### Comments for a Publication
+### Raw revision history
 
 ```json
 {
-  "where": [
-    {
-      "all": [
-        {
-          "path": "/kind",
-          "op": "eq",
-          "value": 2
-        },
-        {
-          "path": "/header/root/author",
-          "op": "eq",
-          "value": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
-        },
-        {
-          "path": "/header/root/document",
-          "op": "eq",
-          "value": "4f5f4c6b5e897c32217a32097510c8d67491c7c9200f2af22c568a5dc2363742"
-        }
-      ]
-    }
-  ],
-  "sort": [
-    {
-      "path": "/created_at",
-      "direction": "asc"
-    }
-  ],
-  "limit": 100
-}
-```
-
-### Reactions Targeting an Event
-
-```json
-{
-  "where": [
-    {
-      "all": [
-        {
-          "path": "/kind",
-          "op": "eq",
-          "value": 3
-        },
-        {
-          "path": "/header/target/type",
-          "op": "eq",
-          "value": "event"
-        },
-        {
-          "path": "/header/target/id",
-          "op": "eq",
-          "value": "5ba0981c33f11bc38a87c19c18a39a9534ed6141e5e85f9a73376dd55c1de594"
-        }
-      ]
-    }
-  ],
-  "limit": 100
-}
-```
-
-### Publication Revision History
-
-```json
-{
-  "where": [
-    {
-      "all": [
-        {
-          "path": "/kind",
-          "op": "eq",
-          "value": 1
-        },
-        {
-          "path": "/author",
-          "op": "eq",
-          "value": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
-        },
-        {
-          "path": "/header/document",
-          "op": "eq",
-          "value": "4f5f4c6b5e897c32217a32097510c8d67491c7c9200f2af22c568a5dc2363742"
-        }
-      ]
-    }
-  ],
-  "sort": [
-    {
-      "path": "/header/revision",
-      "direction": "desc"
-    }
-  ],
-  "limit": 100
-}
-```
-
-### Two OR Branches
-
-```json
-{
-  "where": [
-    {
-      "all": [
-        {
-          "path": "/kind",
-          "op": "eq",
-          "value": 1
-        },
-        {
-          "path": "/header/language",
-          "op": "eq",
-          "value": "pt-BR"
-        }
-      ]
-    },
-    {
-      "all": [
-        {
-          "path": "/kind",
-          "op": "eq",
-          "value": 1
-        },
-        {
-          "path": "/header/language",
-          "op": "eq",
-          "value": "en"
-        }
-      ]
-    }
-  ],
+  "filters": [{
+    "kinds": [1],
+    "signers": ["d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"],
+    "header": [{"path": "/publication", "op": "eq", "value": "artigo-123"}]
+  }],
   "limit": 20
 }
 ```
 
-### Next Page
+Adding `view: current` requests the preferred revision only. Adding a `/revision`
+equality condition without a view searches that historical revision number;
+concurrent events may share that number. An exact ID identifies one edition.
+
+### Empty query result
+
+```json
+{"events": [], "next_cursor": null}
+```
+
+### Start a sync that includes withdrawals
 
 ```json
 {
-  "where": [
-    {
-      "all": [
-        {
-          "path": "/kind",
-          "op": "eq",
-          "value": 1
-        }
-      ]
-    }
-  ],
-  "limit": 20,
-  "cursor": "<opaque-cursor-from-page.next>"
+  "filters": [{
+    "kinds": [1],
+    "signers": ["d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"]
+  }],
+  "cursor": null,
+  "limit": 100
 }
+```
+
+Illustrative caught-up response; the cursor string is a placeholder:
+
+```json
+{"events": [], "cursor": "<relay-and-filter-bound-marker>", "has_more": false}
 ```
 
 ## Validation
 
-Relays validate request envelopes before storage or query work. Event
-submission then applies MIP-01, MIP-02, and the known kind MIP.
+Before accepting this MIP, implementations must agree on the complete error and
+capability formats and demonstrate:
 
-Query validation rejects:
-
-- empty groups or conditions;
-- excessive groups, conditions, sort fields, or result limits;
-- malformed JSON Pointers;
-- unknown or non-indexed paths;
-- incompatible operators and values;
-- sort fields not declared sortable;
-- cursors that are malformed, expired, or bound to another query.
-
-Protocol request failures use the first applicable row below. Relay protection
-may instead fail early with `policy_rejected`, `rate_limited`, or
-`temporarily_unavailable`.
-
-| Order | Condition | Code |
-| ---: | --- | --- |
-| `1` | Missing, unsupported, or inconsistent request media type | `unsupported_media_type` |
-| `2` | Decoded batch or query body exceeds its advertised byte limit | `content_too_large` |
-| `3` | JSON syntax, encoding, duplicate-name, or Unicode failure prevents parsing the request | `invalid_json` |
-| `4` | Closed-object, required-member, member-type, JSON Pointer syntax, operator-value, or sort-composition failure | `invalid_request` |
-| `5` | Group, condition, value-list, sort-field, result, or cursor-byte limit is exceeded | `limit_exceeded` |
-| `6` | A filter or sort path is undeclared, unindexed, unsortable, or does not support the requested operator | `unsupported_filter` |
-| `7` | A cursor is malformed, expired, or bound to another query | `invalid_cursor` |
-| `8` | An event ID in the request path is not lowercase 32-byte hexadecimal | `invalid_id` |
-| `9` | A valid requested event ID is unavailable | `not_found` |
-
-### HTTP Errors
-
-Request-level failures use RFC 9457 Problem Details with
-`Content-Type: application/problem+json`.
-
-```json
-{
-  "type": "https://github.com/mi66mc/mips/blob/main/mips/MIP-03.md#problem-unsupported_filter",
-  "title": "Unsupported filter",
-  "status": 422,
-  "detail": "The requested path is not indexed by this relay.",
-  "code": "unsupported_filter",
-  "pointer": "/where/0/all/1/path"
-}
-```
-
-Stable codes are:
-
-```text
-invalid_json
-invalid_request
-invalid_event
-invalid_id
-invalid_signature
-unsupported_version
-unsupported_kind
-unsupported_filter
-invalid_cursor
-limit_exceeded
-content_too_large
-unsupported_media_type
-not_found
-policy_rejected
-rate_limited
-temporarily_unavailable
-```
-
-For every code, the problem `type` is:
-
-```text
-https://github.com/mi66mc/mips/blob/main/mips/MIP-03.md#problem-<code>
-```
-
-The `code` member MUST equal `<code>`. For request-level failures, both the HTTP
-status and the problem `status` member MUST equal the status assigned below.
-`pointer`, when present, is an RFC 6901 JSON Pointer into the request. Clients
-use `type` or `code` as the machine-readable identifier and MUST NOT depend on
-`title` or `detail`.
-
-| Code | Title | Status |
-| --- | --- | ---: |
-| `invalid_json` | Invalid JSON | `400` |
-| `invalid_request` | Invalid request | `400` |
-| `invalid_event` | Invalid event | `422` |
-| `invalid_id` | Invalid event ID | `400` |
-| `invalid_signature` | Invalid signature | `422` |
-| `unsupported_version` | Unsupported version | `422` |
-| `unsupported_kind` | Unsupported kind | `422` |
-| `unsupported_filter` | Unsupported filter | `422` |
-| `invalid_cursor` | Invalid cursor | `422` |
-| `limit_exceeded` | Protocol limit exceeded | `422` |
-| `content_too_large` | Content too large | `413` |
-| `unsupported_media_type` | Unsupported media type | `415` |
-| `not_found` | Event not found | `404` |
-| `policy_rejected` | Rejected by relay policy | `403` |
-| `rate_limited` | Rate limited | `429` |
-| `temporarily_unavailable` | Temporarily unavailable | `503` |
-
-Relays SHOULD include `Retry-After` with `rate_limited` and
-`temporarily_unavailable` when they can estimate a useful retry time.
-
-Batch item failures use `SubmitResult.reason`, not separate HTTP responses.
-After request parsing, event items use MIP-01's validation order and the most
-specific applicable code: `content_too_large`, `unsupported_version`,
-`invalid_event`, `invalid_id`, `invalid_signature`, `unsupported_kind`, or
-`policy_rejected`.
+- New storage versus valid duplicate, including equivalent JSON formatting.
+- Refusal before acknowledging unavailable storage.
+- AND/OR, typed equality, missing versus null, and inclusive/exclusive time bounds.
+- Explicit rejection of unsupported filters, kinds in current view, and lookup.
+- Local-only reads without explicit lookup.
+- Current selection before filtering, conflicts, withdrawal, and retention loss.
+- Cursor binding, expiry, empty batches, and concurrent arrivals.
+- Late old events visible to sync despite being missed by raw pagination.
+- Identical results and cursor meanings through both HTTP method forms.
 
 ## Relay Indexing
 
-Relays MUST index the MIP-01 core paths and every MIP-04 path listed in this
-MIP's operator tables.
-
-Indexes MAY use any internal representation. Query results and comparison
-semantics MUST remain independent of database-specific ordering, collation, and
-identifiers.
-
-Relays MAY advertise non-core query capabilities, but core clients MUST NOT
-require them.
+Indexing strategy is local. Externally visible semantics must match these
+filters, the kind MIP, and advertised capabilities. No database collation may
+introduce implicit case folding or other equality changes.
 
 ## Compatibility
 
-A core-compatible relay implements every resource in this MIP, including
-`QUERY /events` and `POST /events/query`.
+This replaces the previous `where/all/sort` query language, batch publication,
+and `page.next` responses. Supporting that earlier draft requires an explicit
+separate compatibility interface, not silently accepting ambiguous objects.
 
-Clients MAY cache exact `GET /events/{id}` responses indefinitely because
-events are immutable. Query results represent a changing event set and SHOULD
-NOT be reused as permanent snapshots without relay-provided cache metadata.
-
-HTTP transport errors do not change event validity.
+The optional current view and lookup are independently advertised. No accepted
+minimum profile exists until the open decisions in MIP-05 are resolved.
 
 ## Security Considerations
 
-Relays SHOULD rate-limit submissions, queries, and failed validation attempts.
-They SHOULD bound decoded request size, query complexity, response count,
-cursor size, and cursor lifetime.
+Returned events and announcements are untrusted until verified. Cursors must
+not expose SQL, internal topology, or secrets. Error messages must not expose
+private policy records, stack traces, or key material.
 
-Cursors MUST NOT expose database IDs, SQL fragments, storage topology, or
-unsigned client-controlled query state.
+Searches reveal interests to the contacted relay; lookup reveals a requested ID
+to additional peers. Signed events provide no completeness proof. Resource
+limits mitigate work amplification but cannot guarantee survival of a network
+link saturated by an attacker.
 
-Problem details MUST NOT include stack traces, SQL, private moderation data, or
-other implementation internals.
+## Open Decisions
 
-Browser-facing relays must account for CORS preflight because `QUERY` is not a
-CORS-safelisted method. They include `QUERY` in
-`Access-Control-Allow-Methods` when cross-origin access is allowed.
-
-Clients MUST validate every returned event locally.
+Freeze the complete `/info` vocabulary, error envelope/status table, retention
+renewal and exceptions, query/sync/cursor budget descriptors, and failure
+handling for partially processable sync batches. Validate the draft pagination
+choices under concurrent updates and eviction. These are protocol decisions,
+not missing implementation tasks to be guessed by clients.

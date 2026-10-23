@@ -1,385 +1,214 @@
-# MIP-04: Initial Event Kinds
+# MIP-04: Publications and Revisions
 
 Status: `draft`
 
 ## Kind Allocation
 
-This MIP reserves:
+This rewritten draft retains kind `1` as the `publication` reservation.
+Its new semantics are not compatible with the earlier draft.
 
-| Kind | Name | Model |
-| ---: | --- | --- |
-| `0` | `profile` | versioned document |
-| `1` | `publication` | versioned document |
-| `2` | `comment` | immutable event |
-| `3` | `reaction` | immutable event |
-
-The allocations are also recorded in
-[`KIND-REGISTRY.md`](KIND-REGISTRY.md).
+The earlier profile, comment, and reaction reservations remain recorded in
+[KIND-REGISTRY.md](KIND-REGISTRY.md) but are not defined or required by this
+redesign. They need separate reviewed specifications before reintroduction.
 
 ## Abstract
 
-This MIP defines the initial Murm event kinds for public profiles, bounded short
-and long-form Markdown-compatible publications, comments, and reactions.
+Short posts and long articles are publications with a stable identity and
+immutable complete revisions. Withdrawal changes the preferred editorial state,
+not the existence or cryptographic validity of historical copies.
 
 ## Motivation
 
-The core event envelope intentionally carries no application semantics. A small
-initial kind set is needed for publishing and discussion, while structured
-headers avoid positional tags and leave later kinds free to define their own
-data.
-
-Short posts and long articles use the same `publication` kind. Their difference
-is presentation, not protocol identity.
+An author should be able to revise, cite, withdraw, and restore an article
+without depending on mutable records controlled by one application or relay.
 
 ## Specification
 
-Every object shape defined by this MIP is closed unless stated otherwise. This
-includes nested `root` and `target` objects; unknown properties are invalid.
-Event IDs, public keys, and 32-byte document identifiers use the lowercase
-64-character hexadecimal encoding defined by MIP-01.
+### Stable publication and complete revisions
 
-### Versioned Documents
-
-Profile and publication events use:
+The common publication header uses:
 
 ```ts
-type DocumentHeader = {
-  document: string
+type PublicationHeader = {
+  publication: string
   revision: number
-  previous: string | null
-}
-```
-
-`document` is a 64-character lowercase hexadecimal identifier. Unless a kind
-defines deterministic derivation, the creator generates it from 32
-cryptographically random bytes.
-
-`revision` MUST be a positive safe integer. `previous` MUST be `null` or a
-valid event ID.
-
-The complete document identity is the tuple:
-
-```text
-(author, kind, document)
-```
-
-Revision rules are:
-
-1. The first revision MUST use `revision: 1` and `previous: null`.
-2. Revision `n`, for `n > 1`, MUST reference the event ID of revision `n - 1`.
-3. The referenced event MUST have the same `author`, `kind`, and `document`.
-4. A revision whose predecessor is unavailable is unresolved and MUST NOT be
-   treated as current.
-5. The valid event with the greatest revision is the current state.
-6. If multiple valid branches have the same greatest revision, the event with
-   the lexicographically lowest ID is current. Clients MAY expose other branches
-   as conflicts.
-
-Events are never overwritten. A document is the state resolved from its signed,
-immutable revision events.
-
-### Text Rendering
-
-Publication and comment content is Markdown-compatible text.
-
-Clients MAY render Markdown. They MUST NOT execute scripts or render raw HTML as
-trusted HTML. Clients that do not render Markdown display the content as plain
-text.
-
-### Kind 0: Profile
-
-A profile is the versioned public metadata for one author.
-
-The profile document ID is deterministic:
-
-```text
-lowercase_hex(SHA-256(UTF-8("murm:profile:v1:" + author)))
-```
-
-An author MUST NOT create a second profile document ID.
-
-The header is exactly `DocumentHeader`. Content is:
-
-```ts
-type ProfileContent = {
-  name: string
-  about?: string
-  picture?: string
-}
-```
-
-Rules:
-
-- `name` contains 1 through 80 Unicode scalar values.
-- `about`, when present, is a string no larger than 2 KiB in UTF-8.
-- `picture`, when present, is an absolute RFC 3986 URI with the `https` scheme,
-  a non-empty host, and no user-information component.
-- `UTF-8(JCS(content))` is no larger than 8 KiB.
-- Extra content or header properties are invalid.
-- Names are display values and are not globally unique identifiers.
-
-### Kind 1: Publication
-
-A publication represents a public short post, note, essay, article, or other
-Markdown-compatible written work.
-
-```ts
-type PublicationHeader = DocumentHeader & {
-  title?: string
-  summary?: string
+  status: "published" | "withdrawn"
   topics?: string[]
   language?: string
 }
 ```
 
-Rules:
+`publication` is a non-empty stable identifier chosen for the work by its author.
+Compare its string exactly, without normalization. Its final syntax and length
+bound remain open. Reusing the identifier means revising the same work, not
+creating another one.
 
-- `title`, when present, contains 1 through 200 Unicode scalar values.
-- `summary`, when present, contains at most 500 Unicode scalar values.
-- `topics`, when present, contains at most 20 unique strings.
-- Each topic contains 1 through 64 Unicode scalar values.
-- Topic uniqueness compares exact Unicode scalar sequences without
-  normalization.
-- `language`, when present, is a syntactically well-formed BCP 47 language tag
-  under the complete `Language-Tag` production in RFC 5646 Section 2.1,
-  including private-use and grandfathered forms. Validation does not require a
-  live lookup in the IANA Language Subtag Registry.
-- `content` is a string no larger than 1 MiB in UTF-8.
-- Extra header properties are invalid.
+For the direct-signing model in this draft, the logical identity is:
 
-`title` is optional so the same kind supports brief posts and long-form
-publications.
-
-### Kind 2: Comment
-
-A comment is an immutable reply in a publication discussion.
-
-```ts
-type CommentHeader = {
-  root: {
-    author: string
-    kind: 1
-    document: string
-  }
-  parent: string | null
-}
+```text
+(signer, kind, header.publication)
 ```
 
-`root` identifies the stable publication document rather than one revision.
-`parent` is `null` for a direct reply to the publication. A nested reply sets
-`parent` to a comment event ID. When available, the parent MUST be a kind `2`
-comment with the same `root`.
+The conceptual author is the signer here. This draft does not define a
+separate logical author or device-author relationship. A different signer
+cannot revise or withdraw this author's publication by copying its identifier.
 
-The publication root is `resolved` when at least one valid kind `1` revision
-for `(root.author, 1, root.document)` is available and `unresolved` otherwise.
-An unavailable root does not make the comment malformed or cryptographically
-invalid. A relay MAY store and return an unresolved-root comment and MUST
-re-evaluate its root state when matching publication revisions arrive.
-A malformed `root` object makes the comment invalid.
+`revision` is a positive safe integer. Start at `1`; an editing client uses the
+greatest known revision plus one. At the maximum representable value it must
+report exhaustion rather than wrap around. Not knowing an existing higher
+revision can cause a conflict; it does not establish an exclusive next number.
 
-A nested comment has one of three reference states:
+`status` is explicitly required in this rewritten draft. A published revision
+contains the full article snapshot. A withdrawn revision has `content: null`.
+There is no inherited `previous` field or predecessor-chain validation.
+Receiving revision 5 without revisions 1–4 does not prevent validating its
+complete signed snapshot.
 
-- `resolved`: the parent is available, is a kind `2` comment, and has the same
-  `root`;
-- `unresolved`: the parent is unavailable;
-- `invalid`: the parent is available but has another kind or `root`.
+The final published-content representation, media handling, additional
+metadata, and unknown-header-field behavior are still open. Text examples below
+do not choose Markdown, HTML, or a universal attachment format.
 
-An unresolved comment is not malformed solely because synchronization is
-incomplete. A relay MAY store and return it, but MUST preserve its unresolved
-state for validation. When the parent later becomes available, the relay MUST
-re-evaluate the comment. An invalid comment MUST NOT be included in
-core-compatible kind `2` query results. A relay MAY retain it as opaque
-diagnostic data, but MUST NOT claim that it satisfies MIP-04.
+### Preferred revision and conflicts
 
-Comment `content` is a non-empty Markdown-compatible string no larger than
-128 KiB in UTF-8. Extra header properties are invalid.
+Among valid events for the same publication:
 
-### Kind 3: Reaction
+1. Prefer the greatest revision number.
+2. On a tie, prefer the greatest hexadecimal event ID.
 
-A reaction is an immutable lightweight response to an event or a stable
-document.
+Both conflicting revisions remain events. The tie-breaker is deterministic,
+not chronological proof, a merge, or a way to determine the author's intent.
+Clients that know a conflict SHOULD show it to the author. The author can
+publish a consolidated complete revision with a higher number.
 
-```ts
-type ReactionHeader = {
-  target:
-    | {
-        type: "event"
-        id: string
-      }
-    | {
-        type: "document"
-        author: string
-        kind: number
-        document: string
-      }
-}
-```
+No predecessor retrieval or other-relay lookup is necessary to compare complete
+known revisions. Equal known valid sets produce the same preference, but
+different relays may know different sets or hide newer events.
 
-For a document target, `kind` MUST be a non-negative safe integer. A target
-object is invalid if its fields do not have the identifier encodings declared
-above. Target availability is not part of reaction validity: a well-formed
-reaction may reference an event or document the receiver has not synchronized.
+### Withdrawal and restoration
 
-Reaction `content` is:
+A higher `withdrawn` revision stops the publication being presented as active
+once that revision is preferred. It need not repeat the old article text.
 
-- `+` for a positive reaction;
-- `-` for a negative reaction; or
-- a display reaction string, normally emoji, containing at most 32 Unicode
-  scalar values.
+A still higher `published` revision can restore the work with its complete
+content. A withdrawal is therefore reversible. It is not a global deletion
+command and does not invalidate historical event signatures.
 
-Content MUST NOT be empty. Extra header properties are invalid.
+Relays may retain and serve withdrawn or older revisions. Raw queries and
+exact-ID fetches may find them; the user can ask for any retained revision.
+A revision-number search may find several conflicting events, whereas an ID
+identifies one exact signed event.
+
+### Current view and retention
+
+MIP-03 `view: current` selects the preferred revision before applying result
+filters. A preferred withdrawal is returned unless excluded by a filter.
+Filtering for published content must not fall back to an earlier revision.
+The same applies to removed topics and changed metadata.
+
+Evicting the preferred event MUST NOT silently promote a known older revision
+to current. A relay needs enough verified preference state to suppress that
+fallback, or must report that the current view cannot be provided. It must not
+fabricate a replacement event from local metadata.
+
+How long that state is retained, how its storage is bounded, and what resets
+mean are unresolved. Implementations cannot claim an interoperable current
+view until those rules and the content-validation profile are closed.
+Current view is local knowledge, never a global latest-version proof.
+
+### Links and subscriptions
+
+Stable references name the signer, kind, and publication identifier. Citations
+to a particular edition use its event ID. The URI spelling remains open.
+
+Subscriptions should include edits and withdrawals using stable publication
+identity, rather than only mutable status or topic filters.
 
 ## Canonical Examples
 
-All examples use the Ed25519 key from the MIP-02 canonical example.
+The complete signed example is in [MIP-01](MIP-01.md); the following are
+unsigned fragments, not wire-ready events.
 
-### Profile
-
-```json
-{
-  "version": 1,
-  "id": "389923c44a36dad91d2187c895f0851fd435d5e6a63d5933aa94834e5813ddfa",
-  "author": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
-  "signer": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
-  "authorization": null,
-  "created_at": 1710000000,
-  "kind": 0,
-  "header": {
-    "document": "c62282550ba41b44faf722b5c8606a8008ddc4151ab2afc8e1aa1417079e0666",
-    "revision": 1,
-    "previous": null
-  },
-  "content": {
-    "name": "Alice",
-    "about": "Writing on Murm."
-  },
-  "signature": "19524e14b7e4e4acc4619a8b5d627f773691832fe3bcb8c49a7090eca029e1c76d397687818122d57b1723c1f285cab3aedcdc8ef7f7038f9a177b8843ab2e03"
-}
-```
-
-### Publication
+A published revision:
 
 ```json
 {
-  "version": 1,
-  "id": "5b0b000dc2377e137aeaab36f7a5e2f82de104f1dac38162b08efe1bf7d71139",
-  "author": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
-  "signer": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
-  "authorization": null,
-  "created_at": 1710000000,
-  "kind": 1,
   "header": {
-    "document": "4f5f4c6b5e897c32217a32097510c8d67491c7c9200f2af22c568a5dc2363742",
-    "revision": 1,
-    "previous": null,
-    "title": "Hello Murm"
+    "publication": "artigo-123",
+    "revision": 4,
+    "status": "published",
+    "topics": ["tecnologia"],
+    "language": "pt-BR"
   },
-  "content": "# Hello Murm\n\nA signed publication.",
-  "signature": "40adfc83597064286dd51ad195ca613a444b6f9ca8e554da58d0d1c4ae4f10427719c8f941c87a7b8d2b12e0c84bfb80e23f198d20a3c7cefaa68e4612227b03"
+  "content": "Complete article text for this edition."
 }
 ```
 
-### Comment
+A withdrawal:
 
 ```json
 {
-  "version": 1,
-  "id": "5ba0981c33f11bc38a87c19c18a39a9534ed6141e5e85f9a73376dd55c1de594",
-  "author": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
-  "signer": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
-  "authorization": null,
-  "created_at": 1710000100,
-  "kind": 2,
   "header": {
-    "root": {
-      "author": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
-      "kind": 1,
-      "document": "4f5f4c6b5e897c32217a32097510c8d67491c7c9200f2af22c568a5dc2363742"
-    },
-    "parent": null
+    "publication": "artigo-123",
+    "revision": 5,
+    "status": "withdrawn"
   },
-  "content": "Great article.",
-  "signature": "616f1abbd4fd522bd58ff23e9ebb37f5b99d3c3fa8116d32214503314356815bf2758a81ee95131c8b7cd46c22e612c097d9562f5a6df70a42f6a48439b7430e"
+  "content": null
 }
 ```
 
-### Reaction
+A restoration uses revision `6`, `status: published`, and the full article.
+All three are submitted through the same `POST /events` operation.
 
-```json
-{
-  "version": 1,
-  "id": "0f4768ee5df9fbe807a89c7d406b9a9d5b84f885e71c6f0488b9d17f448ae5f2",
-  "author": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
-  "signer": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
-  "authorization": null,
-  "created_at": 1710000200,
-  "kind": 3,
-  "header": {
-    "target": {
-      "type": "document",
-      "author": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
-      "kind": 1,
-      "document": "4f5f4c6b5e897c32217a32097510c8d67491c7c9200f2af22c568a5dc2363742"
-    }
-  },
-  "content": "+",
-  "signature": "0e39c818ff60ae1c0ec6ad92d9a2627be0b5b667f9cd9a428481a6728bfa83dd3225e8b4e4fc648d452b59c9b80b42510a8f3be0c77bc16388dd50f312424609"
-}
-```
+If revisions 4 and 5 are known, a raw history query can return both. A current
+query returns 5. A current query restricted to `status = published` returns
+neither, not revision 4.
 
 ## Validation
 
-Clients and core-compatible relays validate MIP-01 and MIP-02 before applying
-kind rules.
+Verify MIP-01 and MIP-02 first. Validate the publication identity, positive
+revision, explicit status, and withdrawal body. Do not require missing previous
+editions or trust `created_at` to break conflicts.
 
-Document validators MUST resolve and validate the complete predecessor chain
-before treating a revision as current. Missing predecessors are an unresolved
-state, not proof that the revision is malformed.
-
-Comment validators MUST verify an available parent and MUST classify a missing
-parent as unresolved. A relay MAY store an otherwise well-formed unresolved
-comment. It MUST re-evaluate stored unresolved comments when their parents
-arrive and exclude comments that become invalid from core-compatible kind `2`
-query results.
-
-Comment validators MUST also track whether the publication root is resolved.
-An unresolved root or parent does not itself exclude the comment from kind `2`
-queries, but clients and relays MUST NOT present the reference as resolved.
+Before accepting this MIP, add precise content and metadata constraints and
+cases for concurrent revisions, unknown predecessors, other-signer withdrawal,
+restoration, filtering before/after preference, and eviction of the winner.
 
 ## Relay Indexing
 
-Core-compatible relays index these exact JSON Pointer paths:
+Paths are relative to `header`:
 
-| Kind | Indexable paths | Sortable paths |
-| ---: | --- | --- |
-| `0` | `/header/document`, `/header/revision` | `/header/revision` |
-| `1` | `/header/document`, `/header/revision`, `/header/topics`, `/header/language` | `/header/revision` |
-| `2` | `/header/root/author`, `/header/root/document`, `/header/parent` | none |
-| `3` | `/header/target/type`, `/header/target/id`, `/header/target/author`, `/header/target/kind`, `/header/target/document` | none |
+| Path | Operators | Purpose |
+| --- | --- | --- |
+| `/publication` | `eq` | Stable work identifier. |
+| `/revision` | `eq` | A requested edition number, possibly with conflicts. |
+| `/status` | `eq` | Published or withdrawn. |
+| `/topics` | `contains` | Exact topic membership. |
+| `/language` | `eq` | Exact stored language value. |
 
-Relays are not required to index profile names, publication titles, summaries,
-or full text.
+These are eligible capabilities, not mandatory indexes on every relay.
+Combine them with a signer and kind filter to scope a publication.
+Titles and article text are not implicitly searchable.
 
 ## Compatibility
 
-Core-compatible version 1 relays MUST accept valid events for kinds `0` through
-`3`, subject to local policy.
-
-Relays MAY store unlisted or unsupported kinds but MUST NOT apply MIP-04
-semantics to them.
-
-Clients that do not understand a kind may preserve it as an opaque signed event.
+This replaces the earlier `document/previous` chain, lowest-ID tie-break,
+mandatory Markdown interpretation, and bundled social-kind profile.
+Migration requires newly signed events; the old event's identity cannot survive
+a change to its signed structure.
 
 ## Security Considerations
 
-All header and content fields are user-controlled. Clients MUST escape profile
-text and sanitize rendered Markdown.
+A high revision is an author's declared preference, not a network consensus
+result. Malicious authors can publish extreme revision values; other signers
+cannot take over that publication by doing so.
 
-External profile picture URLs can reveal a reader's IP address and request
-metadata. Clients SHOULD proxy remote media or ask before loading it.
+Render content as untrusted input and prevent script execution. External media
+can reveal reader information. Withdrawal cannot revoke copies, screenshots,
+caches, backups, or someone else's independently signed republication.
 
-Document revision ordering does not make an author's content trustworthy. It
-only produces a deterministic current state among valid signed revisions.
+## Open Decisions
 
-Clients SHOULD limit recursive comment rendering and document-chain traversal
-to avoid resource exhaustion.
+Finalize publication identifier bounds, published-content format, optional
+metadata and extension rules, link syntax, and current-state retention under
+eviction/reset. Future key rotation or device delegation must explicitly define
+whether and how logical authorship survives a signer change.

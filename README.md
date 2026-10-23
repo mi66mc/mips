@@ -1,207 +1,154 @@
 # Murm Protocol MIPs
 
-This repository contains Murm Improvement Proposals: the normative documents
-for the Murm Protocol.
+Murm is a decentralized, local-first protocol for immutable signed events.
+Clients publish to relays; relays store, serve, and may propagate events;
+other clients retrieve and verify them later.
 
-It specifies a protocol. It does not yet contain a relay or client
-implementation.
+There is no protocol login, central identity server, or mandatory direct
+connection between users. Each MIP defines its kinds and application semantics.
 
-## What Murm Is
+This repository contains **specification drafts, not a relay or client
+implementation**. The October 2026 redesign is now reflected in the MIPs.
+It replaces the earlier experimental draft and is not wire-compatible with it.
 
-Murm is a local-first protocol for immutable signed events, versioned public
-documents, and future encrypted communication.
+For a Portuguese explanation of the design, examples, and remaining decisions,
+see [the architecture overview](ARCHITECTURE-DRAFT.md). For protocol rules,
+start with [the MIP index](mips/README.md).
 
-Identity is cryptographic:
+## Trust and limits
 
-- a public key identifies an author;
-- a private key remains on the client;
-- every event carries a verifiable signature;
-- relays store and query events without owning user accounts;
-- the protocol has no login, password, session, JWT, or identity server.
+- Signatures verify integrity and control of the signing key, not content truth.
+- Relays can reject, omit, delete, censor, or stop serving data.
+- Local storage confirmation does not prove replication, delivery, or retention.
+- Replaceable relays and apps reduce dependence on one operator.
+- Availability still requires a reachable copy.
+- HTTPS, alternate contacts, and optional user VPN/proxy use do not solve all
+  provider or government blocking.
 
-Relays remain untrusted. Clients can create, sign, store, and validate events
-locally before synchronizing them.
+No complete private-messaging cryptographic profile or strong anti-blocking
+transport is claimed yet. See the [readiness table](mips/MIP-05.md#draft-readiness).
 
-## Event Model
+## Event model
 
 ```ts
 type JsonValue =
-  | null
-  | boolean
-  | number
-  | string
+  | null | boolean | number | string
   | JsonValue[]
   | { [key: string]: JsonValue }
 
 type Event = {
   version: 1
   id: string
-  author: string
   signer: string
-  authorization: string | null
   created_at: number
   kind: number
-  header: Record<string, JsonValue>
+  header: { [key: string]: JsonValue }
   content: JsonValue
   signature: string
 }
 ```
 
-The fixed envelope is shared by every event.
-
-- `header` contains public metadata needed for validation, relationships,
-  routing, and indexed queries.
-- `content` contains the kind-specific body.
-- The MIP that owns `kind` defines the exact shape and rules of both.
-
-There are no positional event tags. Event kinds are allocated only through
-MIPs and recorded in the [kind registry](mips/KIND-REGISTRY.md).
-
-## IDs and Signatures
-
-The unsigned payload is:
+Exactly these eight top-level fields are allowed in version 1. `header` is
+public, structured metadata; `content` is a JSON value defined by the kind.
+No universal attachment, recipient, device, or delegation field is imposed.
 
 ```text
-[
-  version,
-  author,
-  signer,
-  authorization,
-  created_at,
-  kind,
-  header,
-  content
-]
+unsigned = { version, signer, created_at, kind, header, content }
+raw_id = SHA256(UTF8(JCS(unsigned)))
+id = lowercase_hex(raw_id)
+signature = lowercase_hex(Ed25519_sign(private_key, raw_id))
 ```
 
-Objects use [RFC 8785 JSON Canonicalization](https://www.rfc-editor.org/rfc/rfc8785).
+The hash input is an object, not an array. Ed25519 signs the raw 32-byte digest,
+not the hex string or a second event serialization.
+[MIP-02](mips/MIP-02.md) contains a complete recomputable example.
 
-```text
-id = lowercase_hex(SHA-256(canonical_payload_bytes))
-signature = lowercase_hex(Ed25519_sign(private_key, raw_id_bytes))
-```
+## HTTP interface
 
-MIP-02 includes a complete canonical payload, ID, and signature example so
-implementations can compare their results.
+| Operation | Method and path |
+| --- | --- |
+| Publish one event | `POST /events` |
+| Retrieve a local event | `GET /events/{id}` |
+| Query local events | `QUERY /events` |
+| Query compatibility form | `POST /events/query` |
+| Follow local admissions | `QUERY /events/sync` |
+| Sync compatibility form | `POST /events/sync` |
+| Capabilities and policy | `GET /info` |
+| Public relay contacts | `GET /relays` |
+| Explicit optional exact-ID lookup | `GET /events/{id}?lookup=true` |
 
-## Versioned Documents
+A new stored event returns `201` with `stored`. A valid duplicate still stored
+returns `200` with `already_stored`. Responses declare `retain_until`; `null`
+means no minimum promise. Duplicate submission does not renew retention or
+restart propagation.
 
-Events are always immutable. Profiles and publications form documents through
-signed revision events:
+New accepted events enter bounded default propagation under relay policy.
+There is no forwarding flag or user-facing replica-delivery report.
 
-```ts
-type DocumentHeader = {
-  document: string
-  revision: number
-  previous: string | null
-}
-```
-
-A document keeps a stable identity while every revision retains its own event
-ID and signature.
-
-## Initial Event Kinds
-
-| Kind | Name | Model | Purpose |
-| ---: | --- | --- | --- |
-| `0` | `profile` | versioned document | Public author metadata |
-| `1` | `publication` | versioned document | Short posts and long-form Markdown |
-| `2` | `comment` | immutable event | Replies to a publication discussion |
-| `3` | `reaction` | immutable event | Reactions to events or documents |
-
-Short posts and long articles intentionally use the same publication kind.
-
-## Relay HTTP Interface
-
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/info` | Discover versions, MIPs, limits, and features |
-| `POST` | `/events` | Submit one or more signed events |
-| `GET` | `/events/{id}` | Fetch one immutable event |
-| `HEAD` | `/events/{id}` | Fetch immutable event metadata |
-| `QUERY` | `/events` | Run a safe, structured event query |
-| `POST` | `/events/query` | Compatibility fallback for `QUERY` |
-| `OPTIONS` | `/events` | Discover query support |
-| `OPTIONS` | `/events/{id}` | Discover immutable fetch support |
-
-`QUERY` is the safe and idempotent method defined by
-[RFC 10008](https://www.rfc-editor.org/rfc/rfc10008).
-
-Example:
+Example query body:
 
 ```json
 {
-  "where": [
-    {
-      "all": [
-        {
-          "path": "/kind",
-          "op": "eq",
-          "value": 1
-        },
-        {
-          "path": "/header/topics",
-          "op": "contains",
-          "value": "protocol"
-        }
-      ]
-    }
-  ],
-  "sort": [
-    {
-      "path": "/created_at",
-      "direction": "desc"
-    }
-  ],
+  "filters": [{
+    "kinds": [1],
+    "header": [
+      {"path": "/topics", "op": "contains", "value": "tecnologia"}
+    ]
+  }],
   "limit": 20
 }
 ```
 
-Query groups are `OR`; conditions inside `all` are `AND`. Relays only expose
-core fields and header paths declared indexable by kind MIPs. Core queries never
-inspect event content.
+Conditions inside a filter are ANDed; filters are ORed. Header paths are relative
+to `header` and must be supported by the relay. Replies contain full `events`
+and `next_cursor`. Queries are local; only explicit supported exact-ID lookup
+may ask other relays.
 
-## Current MIPs
+Sync follows local admission order, not author time. Its reply has `events`,
+`cursor`, and `has_more`. Old events that arrive late can therefore be discovered.
 
-| MIP | Title | Status |
+## Publications and messages
+
+Publications use full immutable revisions, identified by
+`(signer, kind, publication)` in the current direct-signing draft.
+Prefer the greatest revision, then greatest event ID. No predecessor chain is
+required.
+
+Withdrawal is another revision with `status: withdrawn` and `content: null`.
+It changes current presentation, not the validity or availability of retained
+history. `view: current` selects the preferred revision before filtering.
+
+Private messages use their own MIP. The direction includes asynchronous signed
+setup material, evolving session keys, and encrypted content, with sender and
+recipient metadata visible. The exact cryptographic profile remains open.
+
+## MIPs
+
+| MIP | Responsibility | Status |
 | --- | --- | --- |
-| [MIP-00](mips/MIP-00.md) | MIP process | `draft` |
-| [MIP-01](mips/MIP-01.md) | Event format | `draft` |
-| [MIP-02](mips/MIP-02.md) | Event IDs and signatures | `draft` |
-| [MIP-03](mips/MIP-03.md) | Relay HTTP interface | `draft` |
-| [MIP-04](mips/MIP-04.md) | Initial event kinds | `draft` |
-| [MIP-05](mips/MIP-05.md) | Core compatibility profile | `draft` |
+| [MIP-00](mips/MIP-00.md) | Process, allocation, and evolution | `draft` |
+| [MIP-01](mips/MIP-01.md) | Common event envelope | `draft` |
+| [MIP-02](mips/MIP-02.md) | Canonical IDs and signatures | `draft` |
+| [MIP-03](mips/MIP-03.md) | HTTP publication, query, sync, capabilities | `draft` |
+| [MIP-04](mips/MIP-04.md) | Publications, revisions, and withdrawal | `draft` |
+| [MIP-05](mips/MIP-05.md) | Compatibility, trust boundaries, and readiness | `draft` |
+| [MIP-06](mips/MIP-06.md) | Relay discovery, propagation, recovery, lookup | `draft` |
+| [MIP-07](mips/MIP-07.md) | Private-message architecture and security requirements | `draft` |
+| [MIP-08](mips/MIP-08.md) | Portability and encrypted backup | `draft` |
+| [MIP-09](mips/MIP-09.md) | Connectivity, privacy, and blocking resistance | `draft` |
 
-## Reading Order
+See [KIND-REGISTRY.md](mips/KIND-REGISTRY.md) for draft and historical reservations.
+Kind numbers do not imply behavior by range.
 
-1. [MIP-00](mips/MIP-00.md) for governance and allocations.
-2. [MIP-01](mips/MIP-01.md) for the event envelope.
-3. [MIP-02](mips/MIP-02.md) for IDs and signatures.
-4. [MIP-04](mips/MIP-04.md) for initial event semantics.
-5. [MIP-03](mips/MIP-03.md) for relay behavior.
-6. [MIP-05](mips/MIP-05.md) for core compatibility.
+## Remaining work
 
-## Implementation Baseline
+The MIPs now contain the redesign, but important decisions are explicitly open:
+identity/device lifecycle, publication content and current-state retention,
+complete capability/error formats, relay-announcement authentication, the
+private-message cryptographic profile, interoperable backup, and stronger
+anti-blocking transports.
 
-A minimal implementation can:
-
-1. build a version 1 event;
-2. canonicalize its unsigned payload;
-3. calculate and sign its ID;
-4. validate received events locally;
-5. resolve versioned document revisions;
-6. submit and fetch relay events;
-7. execute bounded structured queries.
-
-Private keys never leave clients.
-
-## Status Values
-
-- `draft`: under active design.
-- `accepted`: approved for compatible implementations.
-- `final`: stable and implemented.
-- `deprecated`: retained but not recommended.
-- `rejected`: intentionally not adopted.
-
-The normative words `MUST`, `MUST NOT`, `SHOULD`, `SHOULD NOT`, and `MAY`
-describe protocol requirements.
+New concrete editorial choices in this rewrite are listed separately in the
+[architecture overview](ARCHITECTURE-DRAFT.md#19-escolhas-concretas-desta-reescrita).
+None of the MIPs is marked accepted or final. Do not treat architectural
+agreement as a security review or a production interoperability claim.

@@ -4,26 +4,22 @@ Status: `draft`
 
 ## Kind Allocation
 
-This MIP defines the common event envelope and allocates no event kind.
+This MIP defines the envelope and allocates no kind.
 
 ## Abstract
 
-This MIP defines version 1 of the immutable Murm `Event`. Every event identifies
-an author, carries a kind-specific public header and content body, and can be
-verified without trusting the relay that delivered it.
+A Murm event is an immutable, independently verifiable JSON object. The common
+envelope is small; each kind's MIP defines its public metadata and content.
 
 ## Motivation
 
-Murm needs one small envelope that can represent publications, profiles,
-messages, and future protocol actions without relying on positional tags.
-Applications should be able to add new behavior through MIPs while relays keep a
-stable storage and validation model.
+Articles, encrypted messages, relay announcements, and future applications
+share integrity and transport rules without sharing an application schema.
+There is no protocol login or identity server.
 
 ## Specification
 
-### JSON Values
-
-Murm uses the I-JSON subset required by the JSON Canonicalization Scheme:
+### Envelope
 
 ```ts
 type JsonValue =
@@ -33,181 +29,156 @@ type JsonValue =
   | string
   | JsonValue[]
   | { [key: string]: JsonValue }
-```
 
-JSON objects MUST NOT contain duplicate property names. Strings MUST contain
-valid Unicode and MUST preserve their original code points without
-normalization. Numbers MUST be finite IEEE 754 values. Integral JSON numbers
-MUST be safe integers from `-9007199254740991` through `9007199254740991`;
-larger integers MUST be encoded as strings by the owning kind MIP. Fields that
-this MIP defines as integers MUST additionally be non-negative.
-
-### Event
-
-```ts
 type Event = {
   version: 1
   id: string
-  author: string
   signer: string
-  authorization: string | null
   created_at: number
   kind: number
-  header: Record<string, JsonValue>
+  header: { [key: string]: JsonValue }
   content: JsonValue
   signature: string
 }
 ```
 
-Unknown top-level fields are invalid in version 1.
+All eight properties are required. Extra top-level properties MUST be rejected,
+not ignored. There are no universal fields for attachments, recipients,
+logical authors, devices, delegations, or forwarding instructions.
 
-### Fields
+| Field | Meaning |
+| --- | --- |
+| `version` | Core envelope version; not a publication revision. |
+| `id` | Lowercase hexadecimal SHA-256 digest: exactly 64 characters. |
+| `signer` | Ed25519 public signing key, encoded as 64 lowercase hexadecimal characters. |
+| `created_at` | Non-negative safe integer, Unix seconds declared by the signer. |
+| `kind` | Non-negative safe integer; its MIP assigns meaning. |
+| `header` | Public JSON object; nested objects and arrays are allowed. |
+| `content` | Any JSON value permitted by the defining MIP, not necessarily text. |
+| `signature` | 64-byte Ed25519 signature, encoded as 128 lowercase hexadecimal characters. |
 
-- `version` MUST be the integer `1`.
-- `id` MUST be a lowercase hexadecimal encoding of a 32-byte event hash.
-- `author` MUST be a lowercase hexadecimal encoding of the 32-byte Ed25519
-  public key representing the event author.
-- `signer` MUST be a lowercase hexadecimal encoding of the 32-byte Ed25519
-  public key that produced `signature`.
-- `authorization` MUST be `null` for direct authorship. A future MIP may define
-  a 32-byte event ID authorizing a different `signer`.
-- `created_at` MUST be a non-negative safe integer containing Unix time in UTC
-  seconds.
-- `kind` MUST be a non-negative safe integer. Allocation through MIP-00 assigns
-  Murm semantics but is not required for structural or cryptographic envelope
-  validity.
-- `header` MUST be a JSON object. If the implementation understands `kind`,
-  the object MUST satisfy the public metadata rules defined for that kind.
-- `content` MUST be a JSON value. If the implementation understands `kind`,
-  the value MUST satisfy the content rules defined for that kind.
-- `signature` MUST be a lowercase hexadecimal encoding of a 64-byte Ed25519
-  signature.
+Lowercase hexadecimal encodings and safe-integer bounds are concrete choices of
+this rewritten draft. They do not finalize the separate private-message format.
 
-### Direct Authorship
+A signer identifies the signing key, not necessarily a human or a logical
+author with multiple devices. Device authorization and identity recovery are
+not defined by this envelope.
 
-Core version 1 supports direct signatures:
+### JSON input
 
-```text
-signer == author
-authorization == null
-```
+JSON is UTF-8. Implementations MUST reject duplicate object member names at any
+depth, non-finite numbers, invalid Unicode, and lone surrogates. Strings MUST
+NOT be Unicode-normalized during validation or signing.
 
-An event that does not satisfy both conditions is invalid under the core version
-1 compatibility profile. The two fields are separate so a future
-device-authorization MIP can define delegated signatures without changing the
-event envelope.
+Numbers use the IEEE 754 binary64 representation required by
+[JCS](https://www.rfc-editor.org/rfc/rfc8785.html).
+Integral values MUST be within `-9007199254740991` to `9007199254740991`.
+Kinds and timestamps additionally require non-negative values. Larger exact
+integers must be represented as strings if their MIP permits them.
+Negative zero follows JCS normalization to zero; it has no distinct meaning.
 
-### Kind Ownership
+These checks apply recursively, including to unknown fields. Parsing that
+silently drops duplicate members before validation is not sufficient.
 
-MIP-01 only requires `header` to be an object and `content` to be a JSON value.
-The MIP that owns `kind` MUST define:
+### Kind-defined behavior
 
-- the exact header schema;
-- the exact content schema;
-- required and optional properties;
-- whether extra properties are accepted;
-- size and semantic limits;
-- indexable and sortable header paths;
-- whether events form a versioned document.
+The defining MIP specifies:
 
-There is no generic `tags` or `content_type` field.
+- Required, optional, and unknown-field behavior inside `header` and `content`.
+- Semantic validation, relationships, and limits.
+- Public header paths eligible for filtering.
+- Any logical grouping, revision preference, or current-view behavior.
 
-An unlisted or unsupported kind is opaque. Its envelope, ID, and signature can
-still be valid, but an implementation MUST NOT infer kind-specific validity or
-semantics without an allocated MIP it implements.
+Unknown or unsupported kinds MAY be stored opaquely according to relay policy,
+after envelope, ID, and signature verification. A relay MUST NOT describe such
+storage as semantic validation or silently infer semantics from kind numbers.
 
-### Size
+### Immutability and local state
 
-The complete event JSON received on the wire MUST NOT exceed 2 MiB
-(`2097152` bytes) when encoded as UTF-8. Relays SHOULD enforce the wire-size
-limit before cryptographic or kind-specific validation.
+All of `header` and `content` participate in the hash. Removing an unknown
+field before hashing or forwarding is invalid.
 
-### Immutability
+Changing signed data creates another ID. Formatting differences in JSON are not
+different events when the canonical signed value is unchanged.
 
-An event is immutable after its ID and signature are created. Changing any
-signed field creates a different event ID.
+Retention deadlines, admission order, synchronization cursors, propagation
+attempts, and delivery state are relay-local information, not signed fields.
+Repeated valid submissions with the same ID do not create additional events.
 
-Repeated submissions of the same valid ID MUST be idempotent. A relay MUST NOT
-replace stored bytes for an existing ID with different bytes.
+### Limits and time
+
+Relays publish their size and resource limits through MIP-03. There is no
+universal 2 MiB limit inherited from the earlier draft. Enforce finite decoded
+byte and nesting limits before expensive validation; local refusal is distinct
+from an event's cryptographic validity.
+
+`created_at` is not trusted evidence of creation time, arrival order, or whether
+an event preceded a key compromise. Future-clock admission policy is local and
+must not be mistaken for a global timestamp rule.
 
 ## Canonical Examples
 
-The unsigned portion of a publication event has this shape:
+This complete event uses the public example key from MIP-02. Its article body
+is illustrative; the final publication content profile remains open in MIP-04.
 
 ```json
 {
   "version": 1,
-  "author": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+  "id": "945708370d265a3825922c890b2ac7f09fb0d5a68fa5e12e9b768ec0e3790791",
   "signer": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
-  "authorization": null,
   "created_at": 1710000000,
   "kind": 1,
   "header": {
-    "document": "4f5f4c6b5e897c32217a32097510c8d67491c7c9200f2af22c568a5dc2363742",
+    "publication": "hello-murm",
     "revision": 1,
-    "previous": null,
-    "title": "Hello Murm"
+    "status": "published"
   },
-  "content": "# Hello Murm\n\nA signed publication."
+  "content": "Hello Murm.",
+  "signature": "8ab72b5776fbd22b5530c93e7262012b94a73b37c4e9f097d9bf4f8d0d738cb3f517c8b3ebb4e8c3ffb894769b5448a532b1674e2357caa0c051f7c725b4fc01"
 }
 ```
 
-`id` and `signature` are added using MIP-02.
-
 ## Validation
 
-An implementation validates an event in this order:
+1. Bound wire size, decompression, and parse depth.
+2. Parse one object using the JSON input rules.
+3. Check the eight fields, types, version, and encodings.
+4. Recompute the ID and verify the signature under MIP-02.
+5. Validate known kinds under their MIP; otherwise apply opaque-kind policy.
+6. Apply local acceptance policy before reporting storage.
 
-1. Enforce the request and event byte limits.
-2. Parse one JSON object while rejecting duplicate property names and invalid
-   Unicode.
-3. Validate the fixed event shape.
-4. Require `signer == author` and `authorization == null`.
-5. Validate the ID and signature using MIP-02.
-6. If the implementation claims support for the kind, or the active
-   compatibility profile requires it, validate `header` and `content` using the
-   defining MIP.
-7. Otherwise, treat the unlisted or unsupported kind as opaque and apply the
-   relay's unknown-kind storage policy.
-
-Relays SHOULD refuse events whose `created_at` is more than 30 minutes in the
-future, but clock policy does not change the event's cryptographic validity.
+Unknown versions MUST cause an explicit unsupported-version failure, not an
+attempt to process the object as version 1. MIP-03 tracks the remaining error
+wire-format decisions.
 
 ## Relay Indexing
 
-Core-compatible relays MUST index:
+Core operations address IDs and filter by `kind`, `signer`, and `created_at`.
+MIP-03 defines their request syntax. Kind MIPs define header filters.
 
-```text
-/id
-/author
-/signer
-/created_at
-/kind
-```
-
-These are JSON Pointers into the complete event. MIP-01 defines no indexable
-paths under `/header`; kind MIPs define them.
-
-Relays MUST NOT index or query `/content` as part of the core compatibility
-profile.
+There is no universal `author` filter and no core filtering of `content`.
+A future author/device relationship needs explicit semantics, not a hidden
+alias for `signer`.
 
 ## Compatibility
 
-An implementation that only supports envelope version 1 MUST reject other
-versions with a stable `unsupported_version` result.
-
-Unlisted or unsupported kinds MAY be stored as opaque events when the envelope,
-ID, and signature are valid. They are not semantically valid under a
-compatibility profile unless that profile includes an implemented defining MIP.
+This envelope replaces the previous draft's extra `author` and `authorization`
+fields and its different hash input. Old signed events MUST NOT be rewritten
+and passed off as valid events in the new format.
 
 ## Security Considerations
 
-Transport authentication, IP addresses, API keys, relay accounts, and relay
-acceptance are not proof of authorship. Authorship comes only from a valid event
-signature.
+A valid signature proves integrity and control of a key. It does not prove
+truth, human identity, non-spam behavior, complete search results, or retention.
+Clients and relays MUST independently verify received events.
 
-Relays SHOULD reject oversized input before hashing or signature verification.
-Clients MUST treat relay responses as untrusted and validate events locally.
+Application content and external URLs remain untrusted. Use local secret
+storage and established cryptographic libraries. Public metadata is visible
+even when the body contains ciphertext.
 
-Applications MUST treat `header` and `content` as untrusted user-controlled
-data. Rendering and execution rules belong to the relevant kind MIP.
+## Open Decisions
+
+Before acceptance, define a common resource-limit advertisement, timestamp
+policy vocabulary, and interoperability treatment of signature edge cases
+across supported libraries. Logical identity and device management remain
+separate design work; no device-key proposal is implicitly approved here.

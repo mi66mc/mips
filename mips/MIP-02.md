@@ -4,206 +4,153 @@ Status: `draft`
 
 ## Kind Allocation
 
-This MIP defines cryptographic processing for all events and allocates no event
-kind.
+This MIP allocates no event kind.
 
 ## Abstract
 
-This MIP defines how Murm version 1 events are canonicalized, hashed, signed,
-and verified. Event IDs use SHA-256. Event signatures use Ed25519 over the raw
-32-byte event ID.
+Murm hashes a canonical six-field JSON object with SHA-256 and signs the raw
+digest with Ed25519. Every receiver can verify an event without trusting its
+transport or storage provider.
 
 ## Motivation
 
-Independent clients and relays must calculate the same ID for the same event,
-regardless of programming language, object insertion order, or whitespace in
-the received JSON. A single canonical payload also prevents fields from being
-silently excluded from authorship.
+Independent implementations must calculate the same ID. Fields unknown to one
+implementation must remain authenticated rather than disappear during parsing.
 
 ## Specification
 
-### Algorithms
+### Unsigned object
 
-- Canonical JSON MUST follow RFC 8785 JSON Canonicalization Scheme (JCS), with
-  the additional input restrictions below.
-- Event IDs MUST use SHA-256.
-- Event signatures MUST use pure Ed25519 as defined by RFC 8032 Section 5.1.
-  Ed25519ph and context-bearing Ed25519 variants are not compatible.
-- IDs, public keys, and signatures MUST use lowercase hexadecimal.
-
-### Input Restrictions
-
-Before canonicalization, implementations MUST reject:
-
-- duplicate JSON object property names;
-- `NaN`, positive infinity, and negative infinity;
-- negative zero;
-- integral numbers outside the safe integer range
-  `-9007199254740991` through `9007199254740991`;
-- strings or property names containing lone Unicode surrogates;
-- values not representable in JSON.
-
-Strings MUST preserve their original Unicode code points. Implementations MUST
-NOT apply Unicode normalization.
-
-### Canonical Unsigned Payload
-
-The canonical unsigned payload is an array containing exactly:
-
-```text
-version
-author
-signer
-authorization
-created_at
-kind
-header
-content
-```
-
-Example before canonicalization:
+Build an object containing exactly these properties and their event values:
 
 ```json
-[
-  1,
-  "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
-  "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
-  null,
-  1710000000,
-  1,
-  {
-    "title": "Hello Murm",
+{
+  "version": 1,
+  "signer": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+  "created_at": 1710000000,
+  "kind": 1,
+  "header": {
+    "publication": "hello-murm",
     "revision": 1,
-    "previous": null,
-    "document": "4f5f4c6b5e897c32217a32097510c8d67491c7c9200f2af22c568a5dc2363742"
+    "status": "published"
   },
-  "# Hello Murm\n\nA signed publication."
-]
+  "content": "Hello Murm."
+}
 ```
 
-The payload MUST NOT contain `id`, `signature`, or unknown top-level fields.
+The payload is an **object, not an ordered array**. Exclude `id` and `signature`.
+Reject unknown top-level properties under MIP-01 before constructing it.
+Include all nested header and content values without dropping unknown fields.
 
-JCS recursively sorts object properties, preserves array order, emits no
-insignificant whitespace, and produces UTF-8 without a byte-order mark.
+### Hashing
 
-### Event ID
+Canonicalization MUST follow
+[RFC 8785 JCS](https://www.rfc-editor.org/rfc/rfc8785.html), with MIP-01 input
+restrictions. JCS defines property ordering, number and string serialization,
+and UTF-8 output. Ordinary object insertion order is not a substitute.
 
 ```text
-canonical_bytes = UTF-8(JCS(unsigned_payload))
-raw_id = SHA-256(canonical_bytes)
+unsigned = { version, signer, created_at, kind, header, content }
+canonical_bytes = UTF8(JCS(unsigned))
+raw_id = SHA256(canonical_bytes)
 id = lowercase_hex(raw_id)
 ```
 
-### Event Signature
+No additional domain-separation prefix is included in this draft.
+Changing that decision changes every ID and requires explicit versioning.
+
+### Signing
+
+Use pure Ed25519 as defined in
+[RFC 8032](https://www.rfc-editor.org/rfc/rfc8032.html), not Ed25519ph.
 
 ```text
-raw_signature = Ed25519_sign(signer_private_key, raw_id)
-signature = lowercase_hex(raw_signature)
+signature_bytes = Ed25519_sign(private_signing_key, raw_id)
+signature = lowercase_hex(signature_bytes)
 ```
 
-The signature input is the raw 32-byte hash, not the 64-character hexadecimal
-string and not a second serialization of the event.
+The signature input is the **raw 32-byte digest**, not its 64-character hex
+representation and not a serialization of the event with `id` added.
 
-### Verification
-
-To verify an event:
-
-1. Validate the MIP-01 envelope and input restrictions.
-2. Build the unsigned payload in the exact field order above.
-3. Canonicalize the array with JCS.
-4. Hash the UTF-8 bytes with SHA-256.
-5. Compare the lowercase hexadecimal result with `event.id`.
-6. Decode `event.signer` and `event.signature` from lowercase hexadecimal.
-7. Apply the strict Ed25519 checks below and verify the signature over the raw
-   hash bytes.
-8. Apply direct-authorship or authorization rules from the active compatibility
-   profile.
-9. Reject the event if any step fails.
-
-Strict Ed25519 validation is part of Murm event validity:
-
-- the public key MUST be exactly 32 bytes and use a canonical encoding of a
-  non-identity point in the prime-order subgroup;
-- the signature MUST be exactly 64 bytes;
-- the encoded `R` point in the first 32 signature bytes MUST be canonical,
-  decode successfully, and lie in the prime-order subgroup;
-- the little-endian scalar `S` in the final 32 signature bytes MUST satisfy
-  `0 <= S < L`, where `L` is the Ed25519 subgroup order from RFC 8032;
-- every point or scalar decoding failure MUST reject the signature;
-- verification MUST use the RFC 8032 Ed25519 equation, not a permissive legacy
-  variant that accepts non-canonical or small-order inputs.
-
-These checks make signature validity independent of library-specific permissive
-behavior.
+The signer key is 32 bytes and the signature is 64 bytes. Reject malformed
+encodings and scalars outside the Ed25519 range. The draft retains strict
+canonical point decoding: the public key is a non-identity prime-order-subgroup
+point; the signature's R point is canonically encoded and in that subgroup.
+Signature validity MUST NOT depend on a library's permissive decoding defaults.
+Cross-library verification of these edge cases is required before acceptance.
 
 ## Canonical Examples
 
-For the publication example in MIP-01, the canonical payload is:
+The MIP-01 example has this exact canonical unsigned JSON, with no trailing
+newline in the hashed bytes:
 
 ```json
-[1,"d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a","d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",null,1710000000,1,{"document":"4f5f4c6b5e897c32217a32097510c8d67491c7c9200f2af22c568a5dc2363742","previous":null,"revision":1,"title":"Hello Murm"},"# Hello Murm\n\nA signed publication."]
+{"content":"Hello Murm.","created_at":1710000000,"header":{"publication":"hello-murm","revision":1,"status":"published"},"kind":1,"signer":"d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a","version":1}
 ```
 
-Its ID is:
+ID:
 
 ```text
-5b0b000dc2377e137aeaab36f7a5e2f82de104f1dac38162b08efe1bf7d71139
+945708370d265a3825922c890b2ac7f09fb0d5a68fa5e12e9b768ec0e3790791
 ```
 
-The example uses this RFC 8032 test seed:
+Public RFC 8032 example seed, **never suitable for a real identity**:
 
 ```text
 9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60
 ```
 
-This seed is public test data and MUST NOT be used for real identities. Its
-public key is the `author` and `signer` shown above. The resulting signature is:
+Signature:
 
 ```text
-40adfc83597064286dd51ad195ca613a444b6f9ca8e554da58d0d1c4ae4f10427719c8f941c87a7b8d2b12e0c84bfb80e23f198d20a3c7cefaa68e4612227b03
+8ab72b5776fbd22b5530c93e7262012b94a73b37c4e9f097d9bf4f8d0d738cb3f517c8b3ebb4e8c3ffb894769b5448a532b1674e2357caa0c051f7c725b4fc01
 ```
 
-Reordering properties inside `header` does not change the canonical payload or
-ID. Changing `content` changes the ID.
+Formatting whitespace and object member order do not change the ID. Changing
+a string, an array's order, or any signed metadata generally changes the ID.
+Semantically equivalent JSON serializations need not have identical wire bytes.
 
 ## Validation
 
-An ID mismatch and a signature mismatch are separate failures:
+1. Validate MIP-01 input and field constraints.
+2. Construct and canonicalize the six-field object.
+3. Hash its UTF-8 bytes.
+4. Compare the result with the declared ID.
+5. Decode and validate the signer key and signature.
+6. Verify Ed25519 against the recomputed raw digest.
+7. Separately validate the kind and local policy.
 
-- `invalid_id`: the declared `id` differs from the calculated hash.
-- `invalid_signature`: Ed25519 verification fails for the calculated raw ID.
-
-Implementations MUST calculate the ID before verifying the signature. They MUST
-NOT verify a signature over an unvalidated, caller-supplied ID.
+A declared ID is never trusted as the signature input without recomputing it.
+ID mismatch and signature failure are distinguishable validation failures.
+There is no extra direct-author equality check or universal device certificate.
 
 ## Relay Indexing
 
-This MIP adds no indexable paths. Relays index the fixed fields declared by
-MIP-01 and the header fields declared by kind MIPs.
+This MIP adds no filter paths. MIP-03 uses the verified event ID for deduplication
+and exact retrieval.
 
 ## Compatibility
 
-All core version 1 implementations MUST reproduce the canonical payload, ID,
-and signature in this MIP.
+The previous draft hashed an array with extra author-related fields. Its IDs
+and signatures are not compatible with this object-based payload. Removing
+fields from an old event does not migrate its signature.
 
-Changing the canonical payload order, canonicalization scheme, hash algorithm,
-signature algorithm, or signature input requires a new event envelope version.
+The canonicalization, hash algorithm, signature algorithm, and signature input
+are core-version rules, not options selected independently by each relay.
 
 ## Security Considerations
 
-Private keys MUST remain on clients and MUST be generated with a
-cryptographically secure random number generator.
+Real signing secrets require a cryptographically secure random generator and
+protected local storage. Use maintained cryptographic implementations; this MIP
+is not an instruction to implement curve arithmetic.
 
-Implementations SHOULD use constant-time Ed25519 verification from a maintained
-cryptographic library that exposes strict point and scalar validation. If a
-library's default verifier accepts non-canonical or small-order inputs, the
-implementation MUST perform the additional strict checks before calling it.
-Implementations MUST NOT implement Ed25519 arithmetic solely from this
-document.
+Do not normalize Unicode or discard nested fields. Canonicalization failure
+must fail closed. A valid signature is not proof that a relay served the newest
+event, all events, or any promised replica.
 
-Relay acceptance is not proof of validity. Clients SHOULD recalculate IDs and
-verify signatures for events received from every relay.
+## Open Decisions
 
-Canonicalization errors MUST fail closed. An implementation MUST NOT fall back
-to ordinary `JSON.stringify`, map iteration order, locale-sensitive sorting, or
-Unicode normalization.
+Before accepting this draft, verify the strict point-validation profile across
+the chosen libraries and document its rejection cases in this MIP. Private
+message key agreement and backup encryption are not specified by Ed25519 event
+signatures; they belong to MIP-07 and MIP-08.

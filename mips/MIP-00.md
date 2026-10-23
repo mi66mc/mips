@@ -2,138 +2,115 @@
 
 Status: `draft`
 
+## Kind Allocation
+
+This MIP allocates no event kind.
+
 ## Abstract
 
-This MIP defines how Murm Improvement Proposals are written, reviewed, assigned
-event kind numbers, accepted, revised, and retired.
+Murm Improvement Proposals define the common protocol and its extensible event
+types. This MIP defines their structure, review, allocation, and evolution.
 
 ## Motivation
 
-Murm implementations need one public source of truth for protocol behavior.
-Event kinds cannot remain interoperable if separate applications assign their
-own meanings to the same number or change an existing kind without a migration
-path.
+Applications need shared meanings for kinds without making the common envelope
+depend on every application's features. Maintaining a specification does not
+give its maintainers control over identities, relay admission, or the network.
 
 ## Specification
 
-### Required Sections
+### Proposal structure
 
-Every MIP MUST contain the following sections:
+Every MIP includes: status, kind allocation, abstract, motivation,
+specification, canonical examples, validation, relay indexing, compatibility,
+and security considerations. A section may explicitly state that it adds no
+requirements. Drafts with unresolved decisions also include Open Decisions.
 
-1. Title
-2. Status
-3. Kind Allocation, when the proposal defines an event kind
-4. Abstract
-5. Motivation
-6. Specification
-7. Canonical Examples
-8. Validation
-9. Relay Indexing
-10. Compatibility
-11. Security Considerations
+Examples MUST distinguish complete verifiable events from illustrative
+fragments. Examples and validation cases belong in the MIP itself; separate
+schemas, generators, or test-vector directories are not required.
 
-A section MAY state that it has no applicable requirements, but it MUST NOT be
-silently omitted.
+The uppercase terms MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY express the
+requirements of the proposal. In a draft they describe the proposed behavior,
+not a claim that an interoperable implementation or accepted standard exists.
 
-### Statuses
+### Status and readiness
 
-MIPs use one of these statuses:
+- `draft`: under discussion; incompatible changes are possible.
+- `accepted`: reviewed and approved as an interoperable specification.
+- `final`: stable, with interoperability demonstrated by independent implementations.
+- `deprecated`: retained for compatibility but discouraged for new use.
+- `rejected`: not adopted, with the reason recorded.
 
-- `draft`: under active design and subject to incompatible changes.
-- `accepted`: approved for compatible implementations.
-- `final`: implemented, tested, and considered stable.
-- `deprecated`: retained for compatibility but not recommended for new use.
-- `rejected`: considered and intentionally not adopted.
+Changes in status require a reviewed repository change. Acceptance requires
+unambiguous wire formats, validation, compatibility, and security rules.
+A draft that only settles architecture MUST identify the missing decisions;
+implementers MUST NOT invent private wire formats and call them interoperable.
 
-Only `accepted` and `final` MIPs are part of a compatibility profile unless that
-profile explicitly says otherwise.
+### Kind ownership
 
-The maintainers of the canonical Murm MIP repository are the change
-controllers. Every status transition MUST be made through a reviewed repository
-change that records its rationale.
+Each kind has one defining MIP, recorded in [KIND-REGISTRY.md](KIND-REGISTRY.md).
+That MIP defines its header, content, relationships, validation, and searchable
+metadata. Numeric ranges do not imply storage, replacement, or routing behavior.
 
-- A new proposal starts as `draft`.
-- A proposal becomes `accepted` after it satisfies this MIP's validation rules
-  and the maintainers approve it for compatible implementation.
-- A proposal becomes `final` after at least two independent implementations
-  demonstrate interoperable behavior for its normative requirements.
-- A proposal becomes `deprecated` only with a compatibility statement and,
-  when applicable, a replacement or migration path.
-- A proposal becomes `rejected` only with a recorded rationale.
+Draft allocations reserve numbers but do not make their semantics stable.
+Historical reservations are not silently reassigned to unrelated behavior.
+A MIP may describe an area before assigning its kinds; an unassigned kind MUST
+NOT be represented by a made-up number in a purportedly valid wire example.
 
-### Changes
+### Evolution
 
-Editorial corrections MAY update an existing MIP without changing its event
-kind.
+Optional additions are compatible only when an older implementation can ignore
+them without changing the meaning or security of what it already understands.
+Every field remains covered by the event hash, including unknown nested fields.
 
-A `draft` MIP MAY change incompatibly. Such a change MUST update its canonical
-examples, registry entry, and compatibility section in the same repository
-change.
+An incompatible change to a kind's accepted semantics requires a new kind.
+Changes to the envelope, canonicalization, or signing rules require a new core
+version once the current version is accepted. Transport extensions define their
+own negotiation and MUST NOT silently reinterpret existing requests.
 
-After a MIP becomes `accepted` or `final`, a change is breaking when an event
-valid under the old rules can acquire a different meaning, become invalid, or
-produce a different canonical ID under the new rules.
-
-- A breaking change to kind semantics MUST use a new kind allocation or a
-  migration MIP.
-- A breaking change to the event envelope, canonicalization, cryptography, or
-  transport MUST define a new applicable protocol version in a new MIP or
-  migration MIP.
-
-## Kind Allocation
-
-Event kind numbers are assigned in [KIND-REGISTRY.md](KIND-REGISTRY.md).
-
-A draft MIP MAY reserve an unallocated number. The reservation prevents another
-draft from using the same number but does not make the kind part of the core
-compatibility profile.
-
-Each registry entry MUST identify:
-
-- the numeric kind;
-- its protocol name;
-- the defining MIP;
-- the MIP status;
-- whether events are immutable events or versioned documents.
-
-An unlisted number has no Murm-defined meaning. It may still appear in an
-otherwise structurally and cryptographically valid opaque event.
+Draft changes may replace earlier drafts, but MUST update all affected
+examples, indexes, registry entries, and compatibility statements together.
 
 ## Canonical Examples
 
-A kind proposal SHOULD include at least one representative complete valid
-event. Validation edge cases MAY be described directly in the proposal.
+A publication MIP owns its publication identifier and revision rules. A private
+message MIP owns recipients and encrypted content. Neither requires a universal
+recipient or revision field in every event.
 
 ## Validation
 
-Reviewers MUST confirm that:
+Review a proposal for:
 
-1. every required section exists;
-2. the requested kind number is unallocated or reserved for that MIP;
-3. header and content shapes are unambiguous;
-4. relay indexing requirements are bounded;
-5. compatibility and migration behavior are explicit;
-6. security-sensitive rules are explicit.
+1. Consistent fields and meanings across all examples.
+2. A unique kind allocation or an explicit statement that allocation is pending.
+3. Bounded validation and query work.
+4. Explicit compatibility and failure behavior.
+5. Security limits, including what a signature does not prove.
+6. Complete wire rules before acceptance, or clearly listed draft gaps.
 
 ## Relay Indexing
 
-This process MIP defines no event header and no indexable event paths.
-
-Kind MIPs MUST list every `/header` JSON Pointer that core-compatible relays are
-required to index or sort. Fields not listed there are not implicitly
-queryable.
+Kind MIPs declare searchable paths relative to `header`, using JSON Pointer.
+Relays advertise the subset they implement. Storage of a kind does not imply
+semantic validation, indexing, or support for a current-publication view.
 
 ## Compatibility
 
-Relays MAY store unlisted or unsupported kinds as opaque, validly signed
-events. They MUST NOT claim to understand or semantically validate such a kind.
+The October 2026 rewrite replaces the previous unpublished draft design.
+The old ten-field envelope, array hash payload, batch submission format,
+query language, and predecessor-chain rules are not compatible with this draft.
 
-Clients MUST NOT infer semantics from an unregistered kind number.
+Both drafts used envelope version `1` while under development. The number alone
+cannot distinguish them. Existing experimental deployments must coordinate a
+draft upgrade; old events cannot be converted while preserving their IDs and
+signatures. A migration strategy is required before an accepted release.
 
 ## Security Considerations
 
-Kind allocation is a protocol-governance mechanism, not an authorization
-service. It does not grant control over identities, relays, or content.
+Allocation is documentation governance, not an authorization service. Anyone
+can implement a compatible application or operate a relay without a central
+account or permission token. Relays still control their own resources.
 
-A proposal MUST NOT redefine signature validity, authorship, or canonical event
-IDs without explicitly replacing the relevant core MIP.
+New proposals MUST NOT silently change signature verification, signer identity,
+or event IDs. A relay's acceptance is never proof that it is honest.
