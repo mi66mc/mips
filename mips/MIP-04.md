@@ -64,9 +64,27 @@ There is no inherited `previous` field or predecessor-chain validation.
 Receiving revision 5 without revisions 1–4 does not prevent validating its
 complete signed snapshot.
 
-The final published-content representation, media handling, additional
-metadata, and unknown-header-field behavior are still open. Text examples below
-do not choose Markdown, HTML, or a universal attachment format.
+### Published content
+
+When `status` is `published`, `content` MUST be a JSON string containing the
+complete article in [Pandoc Markdown](https://pandoc.org/MANUAL.html#pandocs-markdown).
+This is the default format for publications and requires no format field.
+Use the original Markdown source as the signed value; do not replace it with
+rendered HTML or reformat the source before verifying the event. Other kinds
+continue to define their own content.
+
+The publication profile is intended to cover tables and captions, footnotes,
+math, and [citations with a generated bibliography](https://pandoc.org/MANUAL.html#citation-syntax).
+An article that uses citation keys MUST include their bibliographic data in
+`references` in the article's YAML metadata. Rendering citations must not
+depend on fetching an external bibliography. Bibliographic URLs may still
+be displayed as links to the sources.
+
+The MIP defines the interchange format, not the editor, renderer, or a
+dependency on the Pandoc executable. The exact dialect version, required
+extensions, default citation style, and fallback for unsupported syntax
+remain open before acceptance. Media handling, additional metadata, and
+unknown-header-field behavior also remain open.
 
 ### Preferred revision and conflicts
 
@@ -139,7 +157,7 @@ A published revision:
     "topics": ["tecnologia"],
     "language": "pt-BR"
   },
-  "content": "Complete article text for this edition."
+  "content": "---\nreferences:\n  - id: rfc9505\n    type: report\n    title: A Survey of Worldwide Censorship Techniques\n    number: RFC 9505\n    URL: https://www.rfc-editor.org/rfc/rfc9505.html\n---\n\n## Network blocking\n\nDNS interference and IP blocking target different parts of a connection [@rfc9505, sec. 5]."
 }
 ```
 
@@ -166,8 +184,10 @@ neither, not revision 4.
 ## Validation
 
 Verify MIP-01 and MIP-02 first. Validate the publication identity, positive
-revision, explicit status, and withdrawal body. Do not require missing previous
-editions or trust `created_at` to break conflicts.
+revision, explicit status, and content type: a string for `published` or
+`null` for `withdrawn`. Relays do not need to render the article or fetch its
+sources to validate an event. Do not require missing previous editions or
+trust `created_at` to break conflicts.
 
 Before accepting this MIP, add precise content and metadata constraints and
 cases for concurrent revisions, unknown predecessors, other-signer withdrawal,
@@ -192,7 +212,7 @@ Titles and article text are not implicitly searchable.
 ## Compatibility
 
 This replaces the earlier `document/previous` chain, lowest-ID tie-break,
-mandatory Markdown interpretation, and bundled social-kind profile.
+and bundled social-kind profile. Published content now uses Pandoc Markdown.
 Migration requires newly signed events; the old event's identity cannot survive
 a change to its signed structure.
 
@@ -202,13 +222,16 @@ A high revision is an author's declared preference, not a network consensus
 result. Malicious authors can publish extreme revision values; other signers
 cannot take over that publication by doing so.
 
-Render content as untrusted input and prevent script execution. External media
-can reveal reader information. Withdrawal cannot revoke copies, screenshots,
-caches, backups, or someone else's independently signed republication.
+Render content as untrusted input. Clients MUST NOT render raw HTML from the
+source as active HTML, execute scripts or filters requested by the document,
+or read local files on its behalf. External media can reveal reader
+information. Withdrawal cannot revoke copies, screenshots, caches, backups,
+or someone else's independently signed republication.
 
 ## Open Decisions
 
-Finalize publication identifier bounds, published-content format, optional
+Finalize publication identifier bounds, the interoperable Pandoc Markdown
+profile (version, supported extensions, citation style, and fallback), optional
 metadata and extension rules, link syntax, and current-state retention under
 eviction/reset. Future key rotation or device delegation must explicitly define
 whether and how logical authorship survives a signer change.

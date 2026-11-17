@@ -119,7 +119,7 @@ must not be mistaken for a global timestamp rule.
 ## Canonical Examples
 
 This complete event uses the public example key from MIP-02. Its article body
-is illustrative; the final publication content profile remains open in MIP-04.
+is a plain paragraph in the Pandoc Markdown format defined in MIP-04.
 
 ```json
 {

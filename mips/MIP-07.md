@@ -24,13 +24,20 @@ rules, and carefully separated identity and history recovery.
 
 ### Scope and visibility
 
-A private-message event uses the common MIP-01 envelope. Its MIP-defined public
-header identifies the recipient; its content carries the encrypted package.
-This does not create a recipient field for unrelated kinds.
+A private-message event uses the common MIP-01 envelope. In this provisional
+design, `signer` identifies the sender and `header.recipient` identifies the
+recipient by their public signing key, so clients can query a relay for their
+inbox. The recipient field is specific to this kind.
 
-The outer signer, recipient identity, declared time, and approximate packet
-size are public in this initial direction. Relays may store and replicate
-ciphertext but should not possess plaintext or private decryption secrets.
+Place the message body and application metadata, such as topics and reply
+references, inside the ciphertext carried in `content`. Do not duplicate that
+metadata in the public header. The final packet format still needs to specify
+what cryptographic setup or ratchet fields are visible.
+
+Anyone who obtains the events, including through replication, can see the
+sender and recipient, declared timestamps, and packet sizes. An observer with
+enough events can infer messaging frequency. Relays store and replicate the
+encrypted package without possessing plaintext or private decryption secrets.
 
 This is content confidentiality, not relationship anonymity. MIP-09 separately
 describes IP visibility and user-selected VPN/proxy use.
@@ -56,14 +63,12 @@ secrets.
 
 ### Evolving sessions
 
-Use an established session/ratchet construction with evolving per-message keys
-and deletion of secrets that are no longer required. Do not invent a new cipher
-from this architecture description.
-
-[Double Ratchet](https://signal.org/docs/specifications/doubleratchet/) is a
-design reference, not a complete selected Murm cryptographic profile. It needs
-authenticated initialization and concrete choices for algorithms, state,
-serialization, and limits.
+The draft uses [Double Ratchet](https://signal.org/docs/specifications/doubleratchet/)
+for session messages, with evolving per-message keys and deletion of secrets
+that are no longer required. The complete Murm profile still needs authenticated
+initialization and concrete choices for algorithms, state, serialization, and
+limits. The event signing key is distinct in purpose from the key-agreement
+material used to initialize the session.
 
 Using [HPKE alone](https://www.rfc-editor.org/rfc/rfc9180.html#section-9.7.4)
 with a persistent receiving private key does not provide the desired protection
@@ -152,9 +157,9 @@ exact chosen cryptographic construction.
 
 ## Relay Indexing
 
-The intended public metadata includes a recipient identifier. Its final path,
-type, announcement relationships, and kind allocation are still to be frozen.
-Relays cannot query encrypted message text through the core interface.
+The proposed inbox filter is equality on `/recipient` relative to `header`,
+scoped to the message kind. The kind allocation and required relay capabilities
+remain open. Relays cannot query the encrypted body, topics, or reply references.
 
 ## Compatibility
 
@@ -164,6 +169,8 @@ their own unadvertised package format or algorithms.
 
 The core signature scheme is not the message key-agreement scheme. No root or
 device-key authorization mechanism is implicitly added to the event envelope.
+A future delivery design that hides the recipient can use a different kind
+without changing the semantics of these events.
 
 ## Security Considerations
 

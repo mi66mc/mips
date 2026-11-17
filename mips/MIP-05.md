@@ -91,9 +91,9 @@ MIP-09 defines the initial failover/privacy expectations.
 | --- | --- | --- |
 | Event envelope and signatures | Eight fields, object-based JCS hash, raw-digest Ed25519. | Cross-library edge-case verification and complete resource policy. |
 | HTTP | Publication, local query, sync, and explicit optional lookup. | Full capabilities/error formats and retention commitments. |
-| Publications | Complete revisions, conflicts, withdrawal, current selection. | Content profile and anti-rollback retention. |
+| Publications | Complete revisions, Pandoc Markdown, conflicts, withdrawal, current selection. | Exact Markdown extensions and citation style, and anti-rollback retention. |
 | Relay network | Best-effort propagation, contacts, bounded lookup, recovery. | Announcement wire schema, key/address authentication, allocations. |
-| Private messages | Asynchronous setup, ratcheting direction, metadata limits. | Complete reviewed cryptographic profile and wire format. |
+| Private messages | Double Ratchet, proposed asynchronous setup, visible sender and recipient. | Authenticated session setup, complete reviewed cryptographic profile, and wire format. |
 | Portability | Local encrypted backup, history/identity separation. | Interoperable export/import and backup cryptography. |
 | Blocking resistance | Cached contacts, alternate relays/addresses, proxy policy. | Concrete stronger transports and evaluation. |
 | Identity lifecycle | No central account; keys under user control. | Loss/theft, rotation, revocation, recovery, devices. |
