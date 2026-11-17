@@ -114,13 +114,17 @@ Publications use full immutable revisions, identified by
 Prefer the greatest revision, then greatest event ID. No predecessor chain is
 required.
 
+Published articles carry the full [Pandoc Markdown source](mips/MIP-04.md#published-content)
+in `content`, including any bibliographic data used by their citations.
+
 Withdrawal is another revision with `status: withdrawn` and `content: null`.
 It changes current presentation, not the validity or availability of retained
 history. `view: current` selects the preferred revision before filtering.
 
-Private messages use their own MIP. The direction includes asynchronous signed
-setup material, evolving session keys, and encrypted content, with sender and
-recipient metadata visible. The exact cryptographic profile remains open.
+[Private messages](mips/MIP-07.md) use Double Ratchet in the initial draft.
+Sender and recipient keys are visible for delivery; the body and conversation
+metadata such as topics and reply references are encrypted. The session setup
+and full packet format remain open.
 
 ## MIPs
 

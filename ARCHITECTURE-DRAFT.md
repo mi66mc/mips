@@ -560,9 +560,12 @@ relays guardam e propagam o pacote cifrado. Um fragmento ilustrativo é:
 Isso não adiciona `recipient` ao envelope universal. O formato definitivo do
 pacote pertence à MIP de mensagens.
 
-Foi aceita, nesta etapa, a visibilidade pública das identidades criptográficas
-do remetente e destinatário. Horários declarados e tamanho aproximado também
-ficam observáveis. Cifrar o texto não esconde automaticamente quem fala com quem.
+Para o rascunho inicial, o destinatário fica visível para que o cliente possa
+buscar a caixa de entrada pelo relay. Quem obtém os eventos, inclusive em
+outro relay que recebeu cópias, consegue ver as chaves de quem enviou e de quem
+recebeu, horários declarados e tamanho dos pacotes. Texto, tópicos e referências
+a outras mensagens ficam cifrados. Um desenho que esconda o destinatário pode
+usar outro kind no futuro.
 
 Ana anuncia, de maneira vinculada à sua identidade, suas chaves de criptografia
 e os relays em que recebe mensagens. O aplicativo de Bruno tenta publicar em
@@ -578,8 +581,9 @@ A direção escolhida usa sessões com chaves que evoluem e descarte das chaves
 antigas quando não são mais necessárias. O objetivo é reduzir o que um roubo
 posterior de segredos consegue revelar de mensagens anteriores.
 
-O [Double Ratchet](https://signal.org/docs/specifications/doubleratchet/) é uma
-referência para esse mecanismo, não um perfil completo já adotado. Apenas cifrar
+O [Double Ratchet](https://signal.org/docs/specifications/doubleratchet/) foi
+escolhido para a evolução das chaves. A inicialização da sessão e o formato
+completo do pacote ainda estão abertos. Apenas cifrar
 cada mensagem para uma chave permanente, por exemplo com HPKE, não oferece a
 mesma proteção contra comprometimento posterior do destinatário; essa limitação
 é discutida na [RFC 9180](https://www.rfc-editor.org/rfc/rfc9180.html#section-9.7.4).
@@ -670,9 +674,14 @@ as diferenças em relação ao anterior. Publicar e editar usam `POST /events`.
 Não é preciso ter recebido todas as versões anteriores para verificar uma
 revisão completa.
 
+O artigo publicado usa [Markdown do Pandoc](mips/MIP-04.md#published-content)
+em `content`. A bibliografia usada pelas citações viaja com o texto assinado.
+O protocolo define o formato; cada app escolhe seu editor e renderizador.
+Ainda falta fechar a versão do dialeto, as extensões obrigatórias, o estilo de
+citação padrão e a exibição de sintaxe não suportada.
+
 Um link estável aponta para a publicação; uma referência a uma edição exata
-usa o ID do evento. O formato desses links e o formato do artigo, como Markdown
-ou outra representação, ainda precisam ser definidos.
+usa o ID do evento. O formato desses links ainda precisa ser definido.
 
 ### Escolha entre revisões
 
@@ -848,8 +857,8 @@ foi adotado implicitamente nesta reescrita.
 - Anúncios de relay: comprovação de identidade no endpoint, expiração, atualização,
   prevenção de anúncios regressivos e restrições a endereços perigosos em
   conexões automáticas.
-- Formato do conteúdo dos artigos, estados editoriais completos, representação
-  de links e renderização segura nos clientes.
+- Perfil detalhado do Markdown do Pandoc nos artigos, estados editoriais
+  completos, representação de links e renderização segura nos clientes.
 
 A reescrita documental já está nas MIPs. O próximo passo para torná-las uma
 especificação aceita é resolver e validar as pendências, não tratar os pontos
