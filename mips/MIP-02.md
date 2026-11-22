@@ -152,5 +152,5 @@ event, all events, or any promised replica.
 
 Before accepting this draft, verify the strict point-validation profile across
 the chosen libraries and document its rejection cases in this MIP. Private
-message key agreement and backup encryption are not specified by Ed25519 event
-signatures; they belong to MIP-07 and MIP-08.
+message key agreement is specified separately by MIP-07. Backup encryption
+belongs to applications; MIP-08 provides guidance rather than a required format.

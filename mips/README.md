@@ -15,7 +15,7 @@ or complete private-message cryptographic suite is claimed.
 3. [MIP-03](MIP-03.md): publication, local query, sync, and capability boundaries.
 4. [MIP-04](MIP-04.md): articles, revision conflicts, withdrawal, and current view.
 5. [MIP-06](MIP-06.md): discovery, propagation, recovery, and bounded lookup.
-6. [MIP-07](MIP-07.md) and [MIP-08](MIP-08.md): private messages and portability.
+6. [MIP-07](MIP-07.md) and [MIP-08](MIP-08.md): private messages and application guidance.
 7. [MIP-09](MIP-09.md): connectivity, privacy, and remaining blocking threats.
 8. [MIP-05](MIP-05.md): candidate compatibility profile and readiness gaps.
 
@@ -31,7 +31,7 @@ or complete private-message cryptographic suite is claimed.
 | [MIP-05](MIP-05.md) | Compatibility and Trust Boundaries | `draft` |
 | [MIP-06](MIP-06.md) | Relay Discovery and Event Exchange | `draft` |
 | [MIP-07](MIP-07.md) | Private Messaging | `draft` |
-| [MIP-08](MIP-08.md) | Portability and Encrypted Backup | `draft` |
+| [MIP-08](MIP-08.md) | Portability and Key Management Guidance | `draft` |
 | [MIP-09](MIP-09.md) | Connectivity, Privacy, and Blocking Resistance | `draft` |
 
 The [kind registry](KIND-REGISTRY.md) distinguishes active draft reservations

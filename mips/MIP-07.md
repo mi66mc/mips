@@ -119,9 +119,10 @@ session advancement safely across crashes.
 Repeated transport delivery does not authorize repeated application processing.
 Event ID deduplication is useful but cannot replace cryptographic replay rules.
 
-MIP-08 restores historical data and establishes new sessions; restoring a stale
-live ratchet into two active devices is not an approved backup procedure.
-Concurrent-device messaging remains a separate unresolved design.
+History backup and restoration belong to applications; MIP-08 gives guidance.
+Restoring a stale live ratchet into two active devices can break its security
+assumptions. Session reinitialization and concurrent message-session behavior
+still need rules in this MIP, without adding a protocol device-identity service.
 
 ## Canonical Examples
 

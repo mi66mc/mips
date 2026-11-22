@@ -138,7 +138,7 @@ and full packet format remain open.
 | [MIP-05](mips/MIP-05.md) | Compatibility, trust boundaries, and readiness | `draft` |
 | [MIP-06](mips/MIP-06.md) | Relay discovery, propagation, recovery, lookup | `draft` |
 | [MIP-07](mips/MIP-07.md) | Private-message architecture and security requirements | `draft` |
-| [MIP-08](mips/MIP-08.md) | Portability and encrypted backup | `draft` |
+| [MIP-08](mips/MIP-08.md) | Application portability and key-management guidance | `draft` |
 | [MIP-09](mips/MIP-09.md) | Connectivity, privacy, and blocking resistance | `draft` |
 
 See [KIND-REGISTRY.md](mips/KIND-REGISTRY.md) for draft and historical reservations.
@@ -147,10 +147,15 @@ Kind numbers do not imply behavior by range.
 ## Remaining work
 
 The MIPs now contain the redesign, but important decisions are explicitly open:
-identity/device lifecycle, publication content and current-state retention,
-complete capability/error formats, relay-announcement authentication, the
-private-message cryptographic profile, interoperable backup, and stronger
-anti-blocking transports.
+the full publication rendering profile, relay-announcement authentication, the
+private-message cryptographic profile, and stronger anti-blocking transports.
+Identity is exactly the signing key; custody, backup, recovery, and device
+management belong to users and applications.
+
+The [experimental publication test profile](mips/MIP-05.md#experimental-publication-test-profile)
+now specifies the first relay/CLI implementation: complete `/info` and errors,
+per-kind retention, durable cursors and revision state, and bounded propagation
+between manually configured peers. It includes concrete acceptance scenarios.
 
 New concrete editorial choices in this rewrite are listed separately in the
 [architecture overview](ARCHITECTURE-DRAFT.md#19-escolhas-concretas-desta-reescrita).

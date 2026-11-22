@@ -60,9 +60,11 @@ logical authors, devices, delegations, or forwarding instructions.
 Lowercase hexadecimal encodings and safe-integer bounds are concrete choices of
 this rewritten draft. They do not finalize the separate private-message format.
 
-A signer identifies the signing key, not necessarily a human or a logical
-author with multiple devices. Device authorization and identity recovery are
-not defined by this envelope.
+A protocol identity is exactly the public signing key in `signer`.
+It does not prove a human identity. Storage, custody, export, recovery, and
+device use of the private key belong to the user or a higher-level application,
+including external signing applications. Changing keys creates another
+protocol identity; this envelope provides no automatic transfer or recovery.
 
 ### JSON input
 
@@ -178,7 +180,7 @@ even when the body contains ciphertext.
 
 ## Open Decisions
 
-Before acceptance, define a common resource-limit advertisement, timestamp
-policy vocabulary, and interoperability treatment of signature edge cases
-across supported libraries. Logical identity and device management remain
-separate design work; no device-key proposal is implicitly approved here.
+MIP-03 defines the experimental resource-limit and timestamp-policy vocabulary.
+Before acceptance, verify signature edge cases across supported libraries.
+Key management and device use belong to higher layers, not a required
+identity-lifecycle service in the protocol.
