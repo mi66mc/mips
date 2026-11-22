@@ -33,15 +33,29 @@ type PublicationHeader = {
   publication: string
   revision: number
   status: "published" | "withdrawn"
+  title?: string
+  summary?: string
   topics?: string[]
   language?: string
 }
 ```
 
-`publication` is a non-empty stable identifier chosen for the work by its author.
-Compare its string exactly, without normalization. Its final syntax and length
-bound remain open. Reusing the identifier means revising the same work, not
-creating another one.
+`publication` is a stable identifier of 1–128 ASCII characters matching
+`[A-Za-z0-9][A-Za-z0-9._~-]{0,127}`, chosen by the author. Comparison is
+case-sensitive. Reusing it means revising the same work, not creating another.
+It need not equal the title, and a title change must not change this identity.
+
+`title` and `summary` are optional strings of at most 200 and 1000 Unicode
+scalar values respectively. `topics` is an optional array of at most 20 unique
+strings, each with 1–64 Unicode scalar values. `language` is an optional
+non-empty string of at most 64 Unicode scalar values; apps SHOULD use a BCP 47
+language tag, but relay validation only checks its string bounds. Compare all
+metadata exactly without normalization.
+
+Unknown header members are allowed as optional metadata and remain signed.
+Receivers preserve them but do not infer unsupported behavior. An extension
+that changes revision preference, authorization, or other security semantics
+requires a separately specified compatible mechanism or a new kind under MIP-00.
 
 For the direct-signing model in this draft, the logical identity is:
 
@@ -80,11 +94,15 @@ An article that uses citation keys MUST include their bibliographic data in
 depend on fetching an external bibliography. Bibliographic URLs may still
 be displayed as links to the sources.
 
+Reference completeness is an authoring/rendering check. Relay event validation
+checks the body type and bounded metadata, without parsing Markdown or YAML;
+the validated-kind claim does not certify that citations exist or are correct.
+
 The MIP defines the interchange format, not the editor, renderer, or a
 dependency on the Pandoc executable. The exact dialect version, required
 extensions, default citation style, and fallback for unsupported syntax
-remain open before acceptance. Media handling, additional metadata, and
-unknown-header-field behavior also remain open.
+remain open before acceptance of a complete rendering profile. Relays validate
+the signed string and bounded metadata; they do not render articles.
 
 ### Preferred revision and conflicts
 
@@ -128,9 +146,23 @@ to current. A relay needs enough verified preference state to suppress that
 fallback, or must report that the current view cannot be provided. It must not
 fabricate a replacement event from local metadata.
 
-How long that state is retained, how its storage is bounded, and what resets
-mean are unresolved. Implementations cannot claim an interoperable current
-view until those rules and the content-validation profile are closed.
+Persist a high-water record for each known publication: greatest validated
+`(revision, id)` and its published/withdrawn status. This is local metadata
+derived from a verified event; it is never a fabricated signed event.
+Keep it across ordinary restarts even when the winning content expires.
+It remains until an explicit store reset, and must not be evicted silently
+while offering current view.
+
+If the winner is no longer servable, omit the publication from current results
+without substituting a lower revision. Raw history and exact retrieval may
+still serve retained older editions. A higher valid revision can become current.
+If the preference-state budget is full, reject a new publication before
+acknowledging storage or disable the current-view capability with an explicit
+error; do not forget a winner to make room. An explicit store reset invalidates
+all cursors and cached current-view knowledge of that instance.
+
+Clients with known higher revisions keep the same anti-rollback rule locally.
+A fresh client cannot prove a relay has not omitted a newer event.
 Current view is local knowledge, never a global latest-version proof.
 
 ### Links and subscriptions
@@ -189,7 +221,7 @@ revision, explicit status, and content type: a string for `published` or
 sources to validate an event. Do not require missing previous editions or
 trust `created_at` to break conflicts.
 
-Before accepting this MIP, add precise content and metadata constraints and
+Before accepting this MIP, verify the content and metadata constraints with
 cases for concurrent revisions, unknown predecessors, other-signer withdrawal,
 restoration, filtering before/after preference, and eviction of the winner.
 
@@ -230,8 +262,8 @@ or someone else's independently signed republication.
 
 ## Open Decisions
 
-Finalize publication identifier bounds, the interoperable Pandoc Markdown
-profile (version, supported extensions, citation style, and fallback), optional
-metadata and extension rules, link syntax, and current-state retention under
-eviction/reset. Future key rotation or device delegation must explicitly define
-whether and how logical authorship survives a signer change.
+Finalize the full interoperable Pandoc Markdown rendering profile (version,
+supported extensions, citation style, and fallback) and stable link syntax.
+The relay prototype validates signed metadata and string/null bodies without
+rendering articles. Identity is the signing key; moving authorship between
+different keys is not an implicit operation.

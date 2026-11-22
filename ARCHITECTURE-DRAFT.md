@@ -321,8 +321,9 @@ nesse modo envolvendo kind não suportado gera erro explícito; o cliente pode
 montar a visão a partir dos eventos que recebeu.
 
 "Atual" significa atual entre os eventos conhecidos, não a última versão
-globalmente comprovada. Também falta definir como impedir regressão da visão
-quando o relay elimina a revisão preferida, mas mantém revisões antigas.
+globalmente comprovada. O relay mantém o registro persistente da maior revisão
+validada, mesmo se seu conteúdo expirar. Nesse caso omite a publicação da visão
+atual, sem substituir o evento expirado por uma revisão antiga.
 
 ## 7. Sincronização incremental
 
@@ -436,28 +437,20 @@ indisponibilidade de pares e término do orçamento.
 
 ## 10. Capacidades, limites e abuso
 
-`GET /info` permite descobrir o que um relay oferece. Exemplo parcial de formato,
-com limites ilustrativos:
+`GET /info` tem agora um exemplo completo e campos definidos na
+[MIP-03](mips/MIP-03.md#capabilities-and-policy). Ele anuncia kinds aceitos e
+validados, limites globais, política padrão com exceções por kind, retenção,
+rate limits por operação, filtros, recursos opcionais e orçamento de propagação.
 
-```json
-{
-  "versions": [1],
-  "validated_kinds": [1],
-  "accept_unknown_kinds": true,
-  "limits": {
-    "event_bytes": 1048576,
-    "query_results": 100
-  },
-  "header_filters": [
-    {"kind": 1, "path": "/topics", "ops": ["contains"]}
-  ]
-}
-```
+Os números são política local. O prazo mínimo prometido conta da admissão
+no relay; `retain_until` é o instante efetivo retornado no envio. O prazo máximo
+limita o atendimento local daquela admissão. Duplicatas não renovam o prazo.
+A falta de espaço deve recusar novos envios antes da confirmação; exceções
+antecipadas de política ou obrigação legal são anunciadas explicitamente.
 
-O anúncio diferencia validação semântica de armazenamento opaco. Aceitar um
-kind não implica oferecer todos os seus filtros ou a visão atual. Também deve
-descrever retenção, lookup e capacidades de visão atual; o formato completo
-desses anúncios ainda não está fechado.
+Rate limits usam janelas fixas alinhadas ao horário UTC, por IP ou globais.
+QUERY e seu POST alternativo compartilham a mesma cota. O relay retorna `429`
+com `Retry-After` até o fim da janela que está bloqueando o pedido.
 
 Não há login, CAPTCHA, pagamento ou prova de trabalho obrigatórios no núcleo
 inicial. A proteção inicial combina limites de tamanho, complexidade das
@@ -477,7 +470,8 @@ As recusas precisam distinguir:
 
 Para excesso de requisições, usa-se `429`, com `Retry-After` quando houver uma
 estimativa, conforme a [RFC 6585](https://www.rfc-editor.org/rfc/rfc6585.html#section-4).
-O catálogo completo de erros e respostas ainda precisa ser definido.
+A MIP-03 agora define os códigos e respostas de erro usando Problem Details,
+com status HTTP, código estável e indicação opcional do campo que falhou.
 
 O relay anuncia limites públicos estáveis, mas pode recusar por carga momentânea.
 Não há lista central obrigatória de banimentos. Esses controles não garantem
@@ -630,26 +624,16 @@ Importar a chave de identidade não recria chaves de mensagens que foram apagada
 | Somente a identidade | Não recupera automaticamente o histórico cifrado com segredos descartados. |
 | Apenas cópias cifradas nos relays | Não recupera mensagens sem os segredos necessários. |
 
-O backup é opcional, cifrado e protegido por um segredo de recuperação separado
-da chave de identidade. O ponto de partida é um arquivo sob controle do usuário,
-sem nuvem ou conta obrigatórias. Possuir esse arquivo e seu segredo expõe o
-histórico que ele contém.
+Identidade é somente a chave pública que assina. Sua guarda, recuperação,
+exportação, backup e uso em dispositivos são responsabilidade do usuário ou de
+um aplicativo da camada superior, inclusive um assinador externo.
+A mesma chave em outro app mantém a identidade; outra chave cria outra
+identidade, sem transferir automaticamente a autoria dos artigos anteriores.
 
-A restauração recupera histórico e estabelece novas sessões. Não se deve
-clonar um estado antigo de sessão ativa e usá-lo simultaneamente em dois
-dispositivos. O formato de backup, sua criptografia e o procedimento de
-transferência ainda precisam de especificação.
-
-A portabilidade terá uma MIP própria: formatos documentados de exportação,
-importação e recuperação, incluindo backup privado entre aplicativos que
-suportem as mesmas capacidades. Não há token de API central nem aprovação de
-uma empresa para desenvolver outro cliente compatível.
-
-Trocar de aplicativo não exige trocar de identidade. Eventos públicos podem
-ser buscados onde ainda existirem cópias; histórico privado depende de backup
-ou transferência. Isso não torna aplicativos maliciosos confiáveis: eles podem
-roubar segredos acessíveis ou impedir uma exportação. Cópias de recuperação
-precisam existir antes da perda de acesso.
+A [MIP-08](mips/MIP-08.md) passa a ser orientação para esses aplicativos,
+sem formato de backup, serviço de recuperação ou operação de relay obrigatórios.
+Ela recomenda cuidado com históricos privados e com a restauração de sessões
+antigas, mas não transforma essas escolhas do aplicativo em requisitos do núcleo.
 
 ## 15. Artigos, revisões e retirada
 
@@ -664,10 +648,9 @@ Um cabeçalho ilustrativo é:
 }
 ```
 
-A identidade lógica combina **autor, kind e identificador da publicação**.
-Nos exemplos simples, o autor é identificado pelo `signer`. A relação entre
-autor lógico, chaves de dispositivo e rotação de identidade continua pendente;
-não se reaproveita implicitamente a delegação do desenho anterior.
+A identidade da publicação combina **signer, kind e identificador da publicação**.
+O autor é a chave pública em `signer`. Gestão de dispositivos e recuperação são
+da camada superior; não há delegação ou migração automática de autoria.
 
 Cada revisão é um evento completo e imutável, com o artigo inteiro, não apenas
 as diferenças em relação ao anterior. Publicar e editar usam `POST /events`.
@@ -785,7 +768,7 @@ inglês e esta explicação em português:
 | [MIP-05](mips/MIP-05.md) | Compatibilidade, limites de confiança e pendências. |
 | [MIP-06](mips/MIP-06.md) | Descoberta de relays, propagação, recuperação e lookup. |
 | [MIP-07](mips/MIP-07.md) | Arquitetura e requisitos de mensagens privadas. |
-| [MIP-08](mips/MIP-08.md) | Portabilidade e backup cifrado. |
+| [MIP-08](mips/MIP-08.md) | Orientações de portabilidade e gestão de chaves para apps. |
 | [MIP-09](mips/MIP-09.md) | Conectividade, privacidade e resistência a bloqueios. |
 
 Todas permanecem como rascunhos. Os kinds antigos de perfil, comentário e reação
@@ -800,16 +783,11 @@ foi adotado implicitamente nesta reescrita.
 
 ### Identidade e controle das chaves
 
-- Perda, roubo e recuperação da identidade: o que pode ser recuperado e por qual
-  autoridade criptográfica, sem inventar um reset central.
-- Rotação ou revogação, caso sejam adotadas, e como afetam a autoria de
-  publicações já existentes.
-- Chave de identidade versus chaves de dispositivos; uso simultâneo em vários
-  dispositivos e vínculo entre autor lógico e `signer`.
-- Como lidar com conflitos de autoridade sem tratar horários declarados por um
-  invasor como prova confiável de que um evento precedeu a revogação.
+Decisão fechada para o protocolo: identidade é a chave pública de assinatura.
+Guarda, recuperação, backup e dispositivos pertencem aos aplicativos e usuários.
+Não são pendências que bloqueiam o primeiro relay e cliente.
 
-### Criptografia completa das mensagens e dos backups
+### Criptografia completa das mensagens
 
 - Algoritmos e codificação do material específico de mensagens, além da composição
   entre inicialização e evolução das sessões. A assinatura externa do evento já
@@ -821,7 +799,6 @@ foi adotado implicitamente nesta reescrita.
 - Repetição de mensagens, chegada fora de ordem, limites de chaves pendentes,
   persistência segura do estado, recuperação de falhas e novas sessões.
 - Regras para múltiplos dispositivos e reintrodução de dispositivos restaurados.
-- Formato de backup, criptografia, derivação do segredo de proteção e transferência.
 
 ### Resistência a bloqueios
 
@@ -832,37 +809,30 @@ foi adotado implicitamente nesta reescrita.
 - Diversidade real de descoberta e acesso, sem pressupor que muitas chaves ou
   muitos domínios significam operadores e caminhos independentes.
 
-### Precisão do núcleo e das APIs
+### Núcleo e APIs
 
-- Verificar entre implementações as restrições JSON e criptográficas propostas
-  nas MIPs 01 e 02, sem interpretações diferentes dos mesmos dados.
-- Fechar a descrição pública de limites operacionais, profundidade e política
-  para relógios no futuro. Inteiros seguros já são a proposta do rascunho.
-- Completar exemplos verificáveis nas novas MIPs quando seus formatos forem
-  fechados; o exemplo de ID e assinatura do núcleo já está na MIP-02.
-- Alocação de kinds, identificação de capacidades e perfil mínimo de compatibilidade.
-- Formatos completos de resposta, erros e negociação entre `QUERY` e o caminho
-  alternativo com `POST`.
-- Validar as escolhas de filtro, ordenação e paginação da MIP-03, sobretudo
-  quando entram eventos ou desaparecem cópias durante um percurso.
-- Preservação do estado preferido após expiração de revisões: eliminar uma
-  retirada não pode fazer uma revisão antiga reaparecer silenciosamente como
-  atual. Ainda é preciso escolher regras de retenção ou memória de estado.
-- Fechar limites e expiração de cursores e o tratamento de lotes de sincronização
-  com eventos inválidos ou rejeitados. Os vínculos a relay/filtros e a mudança
-  de limite por lote já estão descritos na MIP-03.
-- Significado exato do compromisso de retenção, exceções e renovação.
-- Seleção de pares, limites de filas, falhas que justificam nova tentativa,
-  memória de IDs e descrição pública das políticas.
-- Anúncios de relay: comprovação de identidade no endpoint, expiração, atualização,
-  prevenção de anúncios regressivos e restrições a endereços perigosos em
-  conexões automáticas.
-- Perfil detalhado do Markdown do Pandoc nos artigos, estados editoriais
-  completos, representação de links e renderização segura nos clientes.
+A MIP-03 fecha o contrato HTTP do teste: anúncio de capacidades, limites,
+retenção por kind, rate limits, erros, cursores e tratamento de lotes.
+A MIP-04 define os limites dos metadados e mantém um registro persistente da
+maior revisão conhecida, mesmo se o conteúdo expirar. Revisões antigas
+continuam consultáveis como histórico, sem reaparecer como atuais.
 
-A reescrita documental já está nas MIPs. O próximo passo para torná-las uma
-especificação aceita é resolver e validar as pendências, não tratar os pontos
-em aberto como detalhes que cada implementação pode inventar.
+Ainda será preciso verificar essas escolhas na implementação, especialmente
+assinaturas entre bibliotecas, reinícios, falhas de gravação e chegada concorrente.
+Para etapas posteriores ficam os anúncios assinados de relay, lookup opcional,
+perfil completo de renderização Pandoc e links estáveis.
+
+### Recorte para a primeira implementação
+
+O [perfil de teste da MIP-05](mips/MIP-05.md#experimental-publication-test-profile)
+usa dois relays com endereços configurados manualmente e um cliente de terminal.
+Inclui assinar, publicar, guardar em disco, consultar, sincronizar, replicar,
+editar e retirar artigos. Não exige descoberta automática ou mensagens privadas.
+
+A escolha proposta para o código de referência é TypeScript com Node.js,
+SQLite no relay e cliente de terminal. É uma decisão da implementação,
+não uma exigência do protocolo. Os testes precisam exercitar falhas e medir
+tempo, memória, disco e tráfego com a configuração documentada.
 
 ## 19. Escolhas concretas desta reescrita
 
@@ -891,7 +861,8 @@ pontos que já estavam todos fechados na conversa nem com uma versão final:
   o cursor de sincronização a relay e filtros, permitindo mudar apenas o tamanho
   do lote sem reiniciar o acompanhamento.
 
-A MIP-05 concentra o quadro de prontidão. Mensagens privadas, anúncios de relay
-e backup ainda não têm formatos interoperáveis completos. Não foi adicionado
+A MIP-05 concentra o quadro de prontidão. Mensagens privadas e anúncios de relay
+ainda não têm formatos interoperáveis completos. Backup pertence aos apps.
+Não foi adicionado
 código de cliente/relay nem infraestrutura de schemas, ferramentas ou vetores
 de teste separados.

@@ -206,6 +206,7 @@ actually exists.
 
 Assign the announcement kind and finalize its fields, response container,
 endpoint/key authentication, expiry, supersession, and anti-rollback rules.
-Define public policy descriptors, retryable failure classes, full-queue
-admission behavior, and lookup incomplete/not-found responses. Freeze safe
-address handling and synchronization rejection behavior.
+MIP-03 defines propagation policy descriptors, retryable failures, full-queue
+behavior, and sync rejection handling for the initial experimental profile.
+Complete lookup incomplete/not-found responses and safe address handling for
+automatic discovery. The first two-relay test uses manually configured peers.
