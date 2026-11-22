@@ -161,3 +161,9 @@ New concrete editorial choices in this rewrite are listed separately in the
 [architecture overview](ARCHITECTURE-DRAFT.md#19-escolhas-concretas-desta-reescrita).
 None of the MIPs is marked accepted or final. Do not treat architectural
 agreement as a security review or a production interoperability claim.
+
+## License
+
+The specification text, documentation, and examples in this repository are
+licensed under the GNU Affero General Public License version 3 only
+(`AGPL-3.0-only`). See [LICENSE](LICENSE) for the full terms.
